@@ -110,6 +110,12 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-graceful-shutdown = "0.15"
 
+# MCP
+rmcp = { version = "0.1", features = ["server", "transport-sse"] }
+
+# Frontend
+dioxus = { version = "0.7", features = ["server"] }
+
 # HTTP
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
@@ -172,21 +178,15 @@ incremental = true
 # rand_chacha.opt-level = 3
 
 # Workspace crates: keep at opt-level 1 so incremental dev builds stay fast
-# [profile.dev.package.bb-api]
+# [profile.dev.package.ib-api]
 # opt-level = 1
-# [profile.dev.package.bb-core]
+# [profile.dev.package.ib-core]
 # opt-level = 1
-# [profile.dev.package.bb-database]
+# [profile.dev.package.ib-database]
 # opt-level = 1
-# [profile.dev.package.bb-formats]
+# [profile.dev.package.ib-frontend]
 # opt-level = 1
-# [profile.dev.package.bb-frontend]
-# opt-level = 1
-# [profile.dev.package.bb-metadata]
-# opt-level = 1
-# [profile.dev.package.bb-storage]
-# opt-level = 1
-# [profile.dev.package.bb-utils]
+# [profile.dev.package.ib-utils]
 # opt-level = 1
 # [profile.dev.package.issueboss]
 # opt-level = 1
