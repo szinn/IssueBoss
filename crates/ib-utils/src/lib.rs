@@ -1,1 +1,3 @@
-// Placeholder — implementation arrives in Task 2
+pub mod token;
+
+pub use token::{Token, TokenParseError, TokenPrefix};
