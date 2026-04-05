@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package issueboss.admin.v1;
+
+message SeedRequest {
+  string username  = 1;
+  string full_name = 2;
+  string email     = 3;
+  string password  = 4;
+}
+
+message SeedResponse {
+  string username = 1;
+  string email    = 2;
+  string api_key  = 3;
+}
+
+service AdminService {
+  rpc Seed(SeedRequest) returns (SeedResponse);
+}
