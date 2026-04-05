@@ -13,7 +13,8 @@ pub type UserToken = Token<UserTokenPrefix, UserId, { i64::MAX as u128 }>;
 /// Per-project capabilities (ViewIssues, etc.) are stored on
 /// `ProjectMember.capabilities`. Both use the same enum for a unified
 /// permission model.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum Capability {
     // Global
     SuperAdmin,

@@ -1,10 +1,10 @@
 use std::future::Future;
 
-use super::model::User;
+use super::model::{User, UserId};
 use crate::error::RepositoryError;
 
 pub trait UserRepository: Send + Sync {
-    fn find_by_id(&self, id: u64) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
+    fn find_by_id(&self, id: UserId) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
 
     fn find_by_username(&self, username: &str) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
 
@@ -14,7 +14,7 @@ pub trait UserRepository: Send + Sync {
 
     fn update(&self, user: User) -> impl Future<Output = Result<User, RepositoryError>> + Send;
 
-    fn delete(&self, id: u64) -> impl Future<Output = Result<(), RepositoryError>> + Send;
+    fn delete(&self, id: UserId) -> impl Future<Output = Result<(), RepositoryError>> + Send;
 
     fn any_super_admin(&self) -> impl Future<Output = Result<bool, RepositoryError>> + Send;
 }
