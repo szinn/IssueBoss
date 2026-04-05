@@ -28,7 +28,14 @@ fn model_to_domain(m: users::Model) -> User {
         api_key_prefix: m.api_key_prefix,
         api_key_created_at: m.api_key_created_at.map(|dt| dt.with_timezone(&chrono::Utc)),
         api_key_last_used_at: m.api_key_last_used_at.map(|dt| dt.with_timezone(&chrono::Utc)),
-        capabilities: serde_json::from_value(m.capabilities).unwrap_or_default(),
+        capabilities: serde_json::from_value(m.capabilities).unwrap_or_else(|e| {
+            tracing::error!(
+                error = %e,
+                "failed to deserialize capabilities for user id {}; defaulting to empty",
+                m.id,
+            );
+            Capabilities::default()
+        }),
         created_at: m.created_at.with_timezone(&chrono::Utc),
         updated_at: m.updated_at.with_timezone(&chrono::Utc),
     }
@@ -46,7 +53,7 @@ fn domain_to_active(user: &User) -> ActiveModel {
         api_key_prefix: Set(user.api_key_prefix.clone()),
         api_key_created_at: Set(user.api_key_created_at.map(|dt| dt.fixed_offset())),
         api_key_last_used_at: Set(user.api_key_last_used_at.map(|dt| dt.fixed_offset())),
-        capabilities: Set(serde_json::to_value(&user.capabilities).unwrap()),
+        capabilities: Set(serde_json::to_value(&user.capabilities).expect("Capabilities serializes to a JSON array — this cannot fail")),
         created_at: Set(user.created_at.fixed_offset()),
         updated_at: Set(user.updated_at.fixed_offset()),
     }
@@ -104,7 +111,14 @@ impl UserRepository for UserRepositoryImpl {
         // syntax.
         let users = UserEntity::find().all(&self.db).await.map_err(db_err)?;
         Ok(users.into_iter().any(|m| {
-            let caps: Capabilities = serde_json::from_value(m.capabilities).unwrap_or_default();
+            let caps: Capabilities = serde_json::from_value(m.capabilities).unwrap_or_else(|e| {
+                tracing::error!(
+                    error = %e,
+                    "failed to deserialize capabilities for user id {} in any_super_admin; defaulting to empty",
+                    m.id,
+                );
+                Capabilities::default()
+            });
             caps.is_super_admin()
         }))
     }

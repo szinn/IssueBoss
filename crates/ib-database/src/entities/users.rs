@@ -13,6 +13,7 @@ pub struct Model {
     pub password_hash: String,
     #[sea_orm(unique)]
     pub email_address: String,
+    #[sea_orm(unique)]
     pub api_key_hash: Option<String>,
     pub api_key_prefix: Option<String>,
     pub api_key_created_at: Option<DateTimeWithTimeZone>,
