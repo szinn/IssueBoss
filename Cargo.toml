@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/issueboss", "crates/integration-tests"]
+members = [
+    "crates/ib-utils",
+    "crates/ib-core",
+    "crates/ib-database",
+    "crates/ib-api",
+    "crates/ib-frontend",
+    "crates/issueboss",
+    "crates/integration-tests",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -92,6 +100,59 @@ empty_structs_with_brackets = "allow"
 missing_errors_doc = "allow"
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
+
+[workspace.dependencies]
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async runtime + shutdown
+tokio = { version = "1", features = ["full"] }
+tokio-graceful-shutdown = "0.15"
+
+# HTTP
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+
+# gRPC
+tonic = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+
+# Database
+sea-orm = { version = "1", features = ["sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
+sea-orm-migration = { version = "1", features = ["sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls"] }
+
+# Auth
+argon2 = "0.5"
+
+# Config
+config = "0.14"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Builders
+derive_builder = "0.20"
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Async trait (needed by sea-orm-migration)
+async-trait = "0.1"
+
+# Workspace crates
+ib-utils    = { path = "crates/ib-utils" }
+ib-core     = { path = "crates/ib-core" }
+ib-database = { path = "crates/ib-database" }
+ib-api      = { path = "crates/ib-api" }
+ib-frontend = { path = "crates/ib-frontend" }
 
 [profile.dev]
 codegen-units = 256

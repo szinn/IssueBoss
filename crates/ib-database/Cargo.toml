@@ -1,0 +1,17 @@
+[package]
+name = "ib-database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ib-core.workspace = true
+ib-utils.workspace = true
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tracing.workspace = true

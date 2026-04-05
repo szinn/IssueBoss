@@ -1,0 +1,13 @@
+[package]
+name = "ib-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ib-utils.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+derive_builder.workspace = true
