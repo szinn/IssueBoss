@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(INSTA_UPDATE=always cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo doc:*)",
+      "Bash(cargo metadata:*)",
+      "Bash(cargo nextest:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo tree:*)",
+      "Bash(direnv allow:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(gh api:*)",
+      "Bash(grep:*)",
+      "Bash(jj desc:*)",
+      "Bash(jj describe:*)",
+      "Bash(jj diff:*)",
+      "Bash(jj log:*)",
+      "Bash(jj new:*)",
+      "Bash(jj show:*)",
+      "Bash(jj status:*)",
+      "Bash(jj untrack:*)",
+      "Bash(jj:*)",
+      "Bash(just *)",
+      "Bash(ls:*)",
+      "Bash(mise trust:*)",
+      "Bash(sed -n '*,*p' *)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:dioxuslabs.com)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:github.com)",
+      "WebSearch"
+    ]
+  },
+  "enabledMcpjsonServers": ["github", "mermaid"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -Rs '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":(\"# jj Skill\\n\\n\" + .)}}' ~/.claude/skills/jj/SKILL.md 2>/dev/null || true",
+            "statusMessage": "Loading jj skill..."
+          }
+        ]
+      }
+    ]
+  }
+}
