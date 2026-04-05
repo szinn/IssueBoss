@@ -20,10 +20,20 @@ pub struct Token<P, Id, const MAX: u128> {
 }
 
 impl<P: TokenPrefix, const MAX: u128> Token<P, u64, MAX> {
+    /// Construct from a raw id, returning an error if `id > MAX`.
+    /// Prefer this in fallible contexts (e.g., database adapters).
+    pub fn try_from_id(id: u64) -> Result<Self, TokenParseError> {
+        if id as u128 > MAX {
+            return Err(TokenParseError::ExceedsMax);
+        }
+        Ok(Self { id, _phantom: PhantomData })
+    }
+
     /// Construct from a raw id. Panics if `id as u128 > MAX`.
+    /// Use in tests and const-equivalent contexts where the caller guarantees
+    /// validity.
     pub fn from_id(id: u64) -> Self {
-        assert!(id as u128 <= MAX, "Token id {id} exceeds maximum {MAX} for prefix {}", P::PREFIX,);
-        Self { id, _phantom: PhantomData }
+        Self::try_from_id(id).unwrap_or_else(|_| panic!("Token id {id} exceeds maximum {MAX} for prefix {}", P::PREFIX,))
     }
 
     /// Returns the underlying id.
@@ -62,7 +72,7 @@ impl<P: TokenPrefix, const MAX: u128> FromStr for Token<P, u64, MAX> {
         if id as u128 > MAX {
             return Err(TokenParseError::ExceedsMax);
         }
-        Ok(Self::from_id(id))
+        Ok(Self { id, _phantom: PhantomData })
     }
 }
 
@@ -132,5 +142,14 @@ mod tests {
         assert_eq!(json, r#""T_7""#);
         let t2: TestToken = serde_json::from_str(&json).unwrap();
         assert_eq!(t2.id(), 7u64);
+    }
+
+    #[test]
+    fn try_from_id_at_max_succeeds() {
+        // Use a small-max token to test boundary
+        define_token_prefix!(SmallPrefix, "S_");
+        type SmallToken = Token<SmallPrefix, u64, 10>;
+        assert!(SmallToken::try_from_id(10).is_ok());
+        assert!(SmallToken::try_from_id(11).is_err());
     }
 }
