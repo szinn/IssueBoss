@@ -92,8 +92,6 @@ component-tests:
 integration-tests:
     just postgres-integration-tests
     just sqlite-integration-tests
-    just mariadb-integration-tests
-    just mysql-integration-tests
 
 [doc('Run Postgres integration tests')]
 postgres-integration-tests:

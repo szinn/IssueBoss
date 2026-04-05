@@ -1,20 +1,13 @@
-use std::future::Future;
+use super::model::{NewUser, User, UserId};
+use crate::{error::Error, repository::Transaction};
 
-use super::model::{User, UserId};
-use crate::error::RepositoryError;
-
+#[async_trait::async_trait]
 pub trait UserRepository: Send + Sync {
-    fn find_by_id(&self, id: UserId) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
-
-    fn find_by_username(&self, username: &str) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
-
-    fn find_by_api_key_hash(&self, hash: &str) -> impl Future<Output = Result<Option<User>, RepositoryError>> + Send;
-
-    fn create(&self, user: User) -> impl Future<Output = Result<User, RepositoryError>> + Send;
-
-    fn update(&self, user: User) -> impl Future<Output = Result<User, RepositoryError>> + Send;
-
-    fn delete(&self, id: UserId) -> impl Future<Output = Result<(), RepositoryError>> + Send;
-
-    fn any_super_admin(&self) -> impl Future<Output = Result<bool, RepositoryError>> + Send;
+    async fn find_by_id(&self, transaction: &dyn Transaction, id: UserId) -> Result<Option<User>, Error>;
+    async fn find_by_username(&self, transaction: &dyn Transaction, username: &str) -> Result<Option<User>, Error>;
+    async fn find_by_api_key_hash(&self, transaction: &dyn Transaction, hash: &str) -> Result<Option<User>, Error>;
+    async fn create(&self, transaction: &dyn Transaction, new_user: NewUser) -> Result<User, Error>;
+    async fn update(&self, transaction: &dyn Transaction, user: User) -> Result<User, Error>;
+    async fn delete(&self, transaction: &dyn Transaction, user: User) -> Result<User, Error>;
+    async fn any_super_admin(&self, transaction: &dyn Transaction) -> Result<bool, Error>;
 }

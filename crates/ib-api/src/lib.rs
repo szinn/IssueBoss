@@ -1,41 +1,45 @@
-pub mod admin_proto {
-    tonic::include_proto!("issueboss.admin.v1");
-}
+mod error;
+mod grpc;
+mod mcp;
 
-pub mod grpc;
-pub mod mcp;
+use std::sync::Arc;
 
-use std::net::SocketAddr;
-
-use admin_proto::admin_service_server::AdminServiceServer;
-pub use grpc::AdminServiceImpl;
+use ib_core::{CoreServices, Error};
 pub use mcp::create_mcp_router;
-use tokio_graceful_shutdown::{SubsystemBuilder, SubsystemHandle};
-use tracing::info;
+use tokio_graceful_shutdown::{IntoSubsystem, SubsystemBuilder, SubsystemHandle};
 
-async fn grpc_subsystem(port: u16, subsys: SubsystemHandle) -> anyhow::Result<()> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    info!("gRPC server listening on {addr}");
-    tonic::transport::Server::builder()
-        .add_service(AdminServiceServer::new(AdminServiceImpl))
-        .serve_with_shutdown(addr, async move { subsys.on_shutdown_requested().await })
-        .await?;
-    Ok(())
+use crate::{grpc::GrpcSubsystem, mcp::McpSubsystem};
+
+pub struct ApiSubsystem {
+    grpc_port: u16,
+    mcp_port: u16,
+    core_services: Arc<CoreServices>,
 }
 
-async fn mcp_subsystem(port: u16, subsys: SubsystemHandle) -> anyhow::Result<()> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("MCP server listening on {addr}");
-    axum::serve(listener, create_mcp_router())
-        .with_graceful_shutdown(async move { subsys.on_shutdown_requested().await })
-        .await?;
-    Ok(())
+impl IntoSubsystem<Error> for ApiSubsystem {
+    async fn run(self, subsys: &mut SubsystemHandle) -> Result<(), Error> {
+        tracing::info!("ApiSubsystem starting...");
+
+        let grpc_subsystem = GrpcSubsystem::new(self.grpc_port, self.core_services.clone());
+        let mcp_subsystem = McpSubsystem::new(self.mcp_port, self.core_services.clone());
+
+        subsys.start(SubsystemBuilder::new("Grpc", grpc_subsystem.into_subsystem()));
+        subsys.start(SubsystemBuilder::new("Mcp", mcp_subsystem.into_subsystem()));
+
+        tracing::info!("ApiSubsystem started");
+
+        subsys.on_shutdown_requested().await;
+        tracing::info!("ApiSubsystem shutting down...");
+
+        Ok(())
+    }
 }
 
-pub async fn create_api_subsystem(mcp_port: u16, grpc_port: u16, subsys: SubsystemHandle) -> anyhow::Result<()> {
-    subsys.start(SubsystemBuilder::new("mcp", move |s| mcp_subsystem(mcp_port, s)));
-    subsys.start(SubsystemBuilder::new("grpc", move |s| grpc_subsystem(grpc_port, s)));
-    subsys.on_shutdown_requested().await;
-    Ok(())
+#[must_use]
+pub fn create_api_subsystem(grpc_port: u16, mcp_port: u16, core_services: Arc<CoreServices>) -> ApiSubsystem {
+    ApiSubsystem {
+        grpc_port,
+        mcp_port,
+        core_services,
+    }
 }

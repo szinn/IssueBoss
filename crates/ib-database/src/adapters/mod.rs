@@ -1,2 +1,2 @@
-pub mod users;
-pub use users::UserRepositoryImpl;
+pub(crate) mod user;
+pub(crate) use user::UserRepositoryAdapter;

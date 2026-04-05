@@ -1,6 +1,10 @@
-use sea_orm::entity::prelude::*;
+use chrono::Utc;
+use ib_core::user::UserToken;
+use sea_orm::{ActiveValue::Set, entity::prelude::*};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm::model]
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -18,12 +22,35 @@ pub struct Model {
     pub api_key_prefix: Option<String>,
     pub api_key_created_at: Option<DateTimeWithTimeZone>,
     pub api_key_last_used_at: Option<DateTimeWithTimeZone>,
-    pub capabilities: Json,
+    pub capabilities: String,
+    pub version: i64,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    fn new() -> Self {
+        let token = UserToken::generate();
 
-impl ActiveModelBehavior for ActiveModel {}
+        Self {
+            id: Set(token.id() as i64),
+            token: Set(token.to_string()),
+            created_at: Set(Utc::now().into()),
+            updated_at: Set(Utc::now().into()),
+            ..ActiveModelTrait::default()
+        }
+    }
+
+    async fn before_save<C>(mut self, _db: &C, _insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if self.is_changed() {
+            self.version = Set(self.version.unwrap() + 1);
+            self.updated_at = Set(Utc::now().into());
+        }
+
+        Ok(self)
+    }
+}

@@ -1,29 +1,28 @@
+#[cfg(feature = "server")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+mod commands;
 mod config;
+mod logging;
 
-use anyhow::Result;
-use ib_api::create_api_subsystem;
-use ib_frontend::create_frontend_subsystem;
-use tokio_graceful_shutdown::{SubsystemBuilder, Toplevel};
-use tracing::info;
+#[cfg(feature = "server")]
+use crate::{
+    commands::{CommandLine, Commands, server::cmd_server},
+    config::Config,
+    logging::init_logging,
+};
 
-use crate::config::Config;
-
+#[cfg(feature = "server")]
 #[tokio::main]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")))
-        .init();
+async fn main() -> anyhow::Result<()> {
+    let cli: CommandLine = clap::Parser::parse();
+    let config = Config::load()?;
 
-    let cfg = Config::load()?;
-    let (http_port, mcp_port, grpc_port) = (cfg.http_port, cfg.mcp_port, cfg.grpc_port);
-    info!("issueboss starting…");
-
-    Toplevel::new(move |s| async move {
-        s.start(SubsystemBuilder::new("frontend", move |subsys| create_frontend_subsystem(http_port, subsys)));
-        s.start(SubsystemBuilder::new("api", move |subsys| create_api_subsystem(mcp_port, grpc_port, subsys)));
-    })
-    .catch_signals()
-    .handle_shutdown_requests(std::time::Duration::from_secs(5))
-    .await
-    .map_err(Into::into)
+    match cli.command {
+        Commands::Server => {
+            init_logging()?;
+            cmd_server(config).await
+        }
+    }
 }

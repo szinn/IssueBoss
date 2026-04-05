@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package issueboss.admin.v1;
+package issueboss.admin;
 
 message SeedRequest {
   string username  = 1;

@@ -8,16 +8,25 @@ rust-version.workspace = true
 name = "issueboss"
 path = "src/main.rs"
 
+[features]
+default = ["server"]
+server = []
+
 [dependencies]
+ib-api.workspace = true
 ib-core.workspace = true
 ib-database.workspace = true
-ib-api.workspace = true
 ib-frontend.workspace = true
-tokio.workspace = true
-tokio-graceful-shutdown.workspace = true
-config.workspace = true
-anyhow.workspace = true
-serde.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
 
+anyhow.workspace = true
+clap.workspace = true
+config.workspace = true
+serde.workspace = true
+tokio-graceful-shutdown.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+tracing-log.workspace = true
+mimalloc.workspace = true
+log.workspace = true
+thiserror.workspace = true

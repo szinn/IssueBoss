@@ -1,3 +1,3 @@
 pub mod token;
 
-pub use token::{Token, TokenParseError, TokenPrefix};
+pub use token::{Token, TokenError, TokenPrefix};
