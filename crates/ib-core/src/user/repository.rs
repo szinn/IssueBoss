@@ -2,6 +2,7 @@ use super::model::{NewUser, User, UserId};
 use crate::{error::Error, repository::Transaction};
 
 #[async_trait::async_trait]
+#[cfg_attr(test, mockall::automock)]
 pub trait UserRepository: Send + Sync {
     async fn find_by_id(&self, transaction: &dyn Transaction, id: UserId) -> Result<Option<User>, Error>;
     async fn find_by_username(&self, transaction: &dyn Transaction, username: &str) -> Result<Option<User>, Error>;

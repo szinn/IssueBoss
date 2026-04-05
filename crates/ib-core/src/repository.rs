@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, pin::Pin, sync::Arc};
 
 use derive_builder::Builder;
 
@@ -25,23 +25,54 @@ impl RepositoryService {
     }
 }
 
-/// A database connection or transaction handle.
-///
-/// Implemented by `ib-database`; `ib-core` never depends on SeaORM directly.
-#[async_trait::async_trait]
-pub trait Repository: Send + Sync {
-    async fn begin(&self) -> Result<Box<dyn Transaction>, Error>;
-    async fn begin_read_only(&self) -> Result<Box<dyn Transaction>, Error>;
-    async fn close(&self) -> Result<(), Error>;
-    /// Verify the DB connection is alive. Used by `ResilienceWrapper::check()`.
-    async fn ping(&self) -> Result<(), Error>;
-}
-
 #[async_trait::async_trait]
 pub trait Transaction: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     async fn commit(self: Box<Self>) -> Result<(), Error>;
     async fn rollback(self: Box<Self>) -> Result<(), Error>;
+}
+
+#[async_trait::async_trait]
+#[cfg_attr(test, mockall::automock)]
+#[allow(unused_lifetimes)]
+pub trait Repository: Send + Sync {
+    async fn begin(&self) -> Result<Box<dyn Transaction>, Error>;
+    async fn begin_read_only(&self) -> Result<Box<dyn Transaction>, Error>;
+    async fn close(&self) -> Result<(), Error>;
+    /// Verify the DB connection is alive.
+    async fn ping(&self) -> Result<(), Error>;
+}
+
+/// Execute `f` within a read-write transaction, committing on success and
+/// rolling back on error.
+pub async fn transaction<F, T>(repository: &dyn Repository, f: F) -> Result<T, Error>
+where
+    F: for<'c> FnOnce(&'c dyn Transaction) -> Pin<Box<dyn std::future::Future<Output = Result<T, Error>> + Send + 'c>> + Send,
+    T: Send,
+{
+    let tx = repository.begin().await?;
+    match f(&*tx).await {
+        Ok(result) => {
+            tx.commit().await?;
+            Ok(result)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Execute `f` within a read-only transaction, rolling back when done.
+pub async fn read_only_transaction<F, T>(repository: &dyn Repository, f: F) -> Result<T, Error>
+where
+    F: for<'c> FnOnce(&'c dyn Transaction) -> Pin<Box<dyn std::future::Future<Output = Result<T, Error>> + Send + 'c>> + Send,
+    T: Send,
+{
+    let tx = repository.begin_read_only().await?;
+    let result = f(&*tx).await;
+    let _ = tx.rollback().await;
+    result
 }
 
 /// Execute an async operation within a read-write transaction.
@@ -53,13 +84,13 @@ pub trait Transaction: Any + Send + Sync {
 /// ```ignore
 /// // Single repository
 /// with_transaction!(self, user_repository, |tx| {
-///     user_repository.add_user(tx, user).await
+///     user_repository.create(tx, new_user).await
 /// })
 ///
 /// // Multiple repositories
-/// with_transaction!(self, user_repository, order_repository, |tx| {
-///     let user = user_repository.add_user(tx, user).await?;
-///     order_repository.create_order(tx, user.id, order).await
+/// with_transaction!(self, user_repository, other_repository, |tx| {
+///     let user = user_repository.create(tx, new_user).await?;
+///     other_repository.do_something(tx, user.id).await
 /// })
 /// ```
 #[macro_export]
@@ -77,16 +108,8 @@ macro_rules! with_transaction {
 ///
 /// # Examples
 /// ```ignore
-/// // Single repository
 /// with_read_only_transaction!(self, user_repository, |tx| {
 ///     user_repository.find_by_id(tx, id).await
-/// })
-///
-/// // Multiple repositories
-/// with_read_only_transaction!(self, user_repository, order_repository, |tx| {
-///     let user = user_repository.find_by_id(tx, id).await?;
-///     let orders = order_repository.find_by_user(tx, user.id).await?;
-///     Ok((user, orders))
 /// })
 /// ```
 #[macro_export]
@@ -95,4 +118,50 @@ macro_rules! with_read_only_transaction {
         $(let $repo = $self.repository_service.$repo().clone();)+
         $crate::repository::read_only_transaction(&**$self.repository_service.repository(), |$tx| Box::pin(async move { $body })).await
     }};
+}
+
+/// Shared test helpers — a no-op `MockTransaction` and a pre-wired
+/// `MockRepository` for service unit tests.
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::{any::Any, sync::Arc};
+
+    use super::{MockRepository, RepositoryServiceBuilder, Transaction};
+    use crate::{Error, user::repository::MockUserRepository};
+
+    /// A no-op transaction for unit tests.
+    pub(crate) struct MockTransaction;
+
+    #[async_trait::async_trait]
+    impl Transaction for MockTransaction {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        async fn commit(self: Box<Self>) -> Result<(), Error> {
+            Ok(())
+        }
+
+        async fn rollback(self: Box<Self>) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    /// Returns a `MockRepository` pre-configured to open no-op transactions.
+    pub(crate) fn make_mock_repo() -> MockRepository {
+        let mut r = MockRepository::new();
+        r.expect_begin()
+            .returning(|| Box::pin(async { Ok(Box::new(MockTransaction) as Box<dyn Transaction>) }));
+        r.expect_begin_read_only()
+            .returning(|| Box::pin(async { Ok(Box::new(MockTransaction) as Box<dyn Transaction>) }));
+        r
+    }
+
+    /// Returns a `RepositoryServiceBuilder` pre-populated with default mocks.
+    /// Override individual repositories for the one(s) under test.
+    pub(crate) fn default_repository_service_builder() -> RepositoryServiceBuilder {
+        RepositoryServiceBuilder::default()
+            .repository(Arc::new(make_mock_repo()))
+            .user_repository(Arc::new(MockUserRepository::new()))
+    }
 }

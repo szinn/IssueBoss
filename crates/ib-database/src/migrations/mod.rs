@@ -2,7 +2,7 @@ pub use sea_orm_migration::prelude::*;
 
 mod m20260405_000001_create_users;
 
-pub struct Migrator;
+pub(crate) struct Migrator;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
