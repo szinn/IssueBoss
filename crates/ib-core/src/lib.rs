@@ -1,1 +1,5 @@
-// Placeholder — implementation arrives in Task 3
+pub mod error;
+pub mod repository;
+pub mod user;
+
+pub use error::{Error, ErrorKind, RepositoryError};
