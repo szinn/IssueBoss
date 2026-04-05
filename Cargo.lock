@@ -2384,13 +2384,16 @@ dependencies = [
 name = "ib-api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum 0.8.8",
  "prost",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-graceful-shutdown",
  "tonic",
  "tonic-build",
+ "tracing",
 ]
 
 [[package]]
@@ -2426,9 +2429,11 @@ dependencies = [
 name = "ib-frontend"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum 0.8.8",
  "dioxus",
  "tokio",
+ "tokio-graceful-shutdown",
  "tower 0.5.3",
  "tracing",
 ]
@@ -2643,7 +2648,6 @@ name = "issueboss"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum 0.8.8",
  "config",
  "ib-api",
  "ib-core",
@@ -2652,8 +2656,6 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-graceful-shutdown",
- "tonic",
- "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
 ]

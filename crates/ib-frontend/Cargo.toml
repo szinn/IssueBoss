@@ -6,9 +6,11 @@ rust-version.workspace = true
 
 [dependencies]
 axum.workspace = true
+tokio.workspace = true
+tokio-graceful-shutdown.workspace = true
+anyhow.workspace = true
 tracing.workspace = true
 dioxus.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true }
 tower = { workspace = true }
