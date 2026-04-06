@@ -2,13 +2,14 @@ use std::{any::Any, pin::Pin, sync::Arc};
 
 use derive_builder::Builder;
 
-use crate::{Error, user::UserRepository};
+use crate::{Error, api_key::ApiKeyRepository, user::UserRepository};
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct RepositoryService {
     repository: Arc<dyn Repository>,
     user_repository: Arc<dyn UserRepository>,
+    api_key_repository: Arc<dyn ApiKeyRepository>,
 }
 
 impl RepositoryService {
@@ -22,6 +23,12 @@ impl RepositoryService {
     #[must_use]
     pub fn user_repository(&self) -> &Arc<dyn UserRepository> {
         &self.user_repository
+    }
+
+    /// Returns a reference to the api key repository.
+    #[must_use]
+    pub fn api_key_repository(&self) -> &Arc<dyn ApiKeyRepository> {
+        &self.api_key_repository
     }
 }
 
@@ -127,7 +134,7 @@ pub mod testing {
     use std::{any::Any, sync::Arc};
 
     use super::{MockRepository, RepositoryServiceBuilder, Transaction};
-    use crate::{Error, user::repository::MockUserRepository};
+    use crate::{Error, api_key::repository::MockApiKeyRepository, user::repository::MockUserRepository};
 
     /// A no-op transaction for unit tests.
     pub struct MockTransaction;
@@ -163,5 +170,6 @@ pub mod testing {
         RepositoryServiceBuilder::default()
             .repository(Arc::new(make_mock_repo()))
             .user_repository(Arc::new(MockUserRepository::new()))
+            .api_key_repository(Arc::new(MockApiKeyRepository::new()))
     }
 }
