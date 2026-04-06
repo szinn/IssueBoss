@@ -2,7 +2,12 @@ use std::{any::Any, pin::Pin, sync::Arc};
 
 use derive_builder::Builder;
 
-use crate::{Error, api_key::ApiKeyRepository, user::UserRepository};
+use crate::{
+    Error,
+    api_key::ApiKeyRepository,
+    project::{ProjectMemberRepository, ProjectRepository},
+    user::UserRepository,
+};
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -10,6 +15,8 @@ pub struct RepositoryService {
     repository: Arc<dyn Repository>,
     user_repository: Arc<dyn UserRepository>,
     api_key_repository: Arc<dyn ApiKeyRepository>,
+    project_repository: Arc<dyn ProjectRepository>,
+    project_member_repository: Arc<dyn ProjectMemberRepository>,
 }
 
 impl RepositoryService {
@@ -29,6 +36,18 @@ impl RepositoryService {
     #[must_use]
     pub fn api_key_repository(&self) -> &Arc<dyn ApiKeyRepository> {
         &self.api_key_repository
+    }
+
+    /// Returns a reference to the project repository.
+    #[must_use]
+    pub fn project_repository(&self) -> &Arc<dyn ProjectRepository> {
+        &self.project_repository
+    }
+
+    /// Returns a reference to the project member repository.
+    #[must_use]
+    pub fn project_member_repository(&self) -> &Arc<dyn ProjectMemberRepository> {
+        &self.project_member_repository
     }
 }
 
@@ -134,7 +153,12 @@ pub mod testing {
     use std::{any::Any, sync::Arc};
 
     use super::{MockRepository, RepositoryServiceBuilder, Transaction};
-    use crate::{Error, api_key::repository::MockApiKeyRepository, user::repository::MockUserRepository};
+    use crate::{
+        Error,
+        api_key::repository::MockApiKeyRepository,
+        project::repository::{MockProjectMemberRepository, MockProjectRepository},
+        user::repository::MockUserRepository,
+    };
 
     /// A no-op transaction for unit tests.
     pub struct MockTransaction;
@@ -171,5 +195,7 @@ pub mod testing {
             .repository(Arc::new(make_mock_repo()))
             .user_repository(Arc::new(MockUserRepository::new()))
             .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+            .project_repository(Arc::new(MockProjectRepository::new()))
+            .project_member_repository(Arc::new(MockProjectMemberRepository::new()))
     }
 }

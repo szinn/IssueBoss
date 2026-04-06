@@ -1,5 +1,6 @@
 pub mod api_key;
 pub mod error;
+pub mod project;
 pub mod repository;
 pub mod user;
 

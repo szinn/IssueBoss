@@ -7,11 +7,7 @@
 /// - Leading and trailing hyphens stripped
 /// - Truncated to 50 characters (at a hyphen boundary when possible)
 pub fn slugify(text: &str) -> String {
-    let raw: String = text
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
+    let raw: String = text.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
 
     // Collapse consecutive hyphens
     let mut slug = String::with_capacity(raw.len());
