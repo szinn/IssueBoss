@@ -12,17 +12,13 @@ use crate::{
 };
 
 pub struct CoreServices {
-    pub(crate) repository_service: Arc<RepositoryService>,
     user_service: Arc<dyn UserService>,
 }
 
 impl CoreServices {
     pub(crate) fn new(repository_service: Arc<RepositoryService>) -> Self {
         let user_service = Arc::new(UserServiceImpl::new(repository_service.clone()));
-        Self {
-            repository_service,
-            user_service,
-        }
+        Self { user_service }
     }
 
     #[must_use]

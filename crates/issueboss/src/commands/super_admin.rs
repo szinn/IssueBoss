@@ -1,3 +1,5 @@
+use ib_api::grpc::admin::super_admin;
+
 #[derive(Debug, clap::Args)]
 pub(crate) struct SuperAdminArgs {
     /// Username for the SuperAdmin account
@@ -18,7 +20,7 @@ pub(crate) struct SuperAdminArgs {
 }
 
 pub(crate) async fn cmd_super_admin(host: &str, port: u16, args: SuperAdminArgs) -> anyhow::Result<()> {
-    let response = ib_api::grpc::admin::api::super_admin(host, port, &args.username, &args.full_name, &args.password, &args.email)
+    let response = super_admin::api::super_admin(host, port, &args.username, &args.full_name, &args.password, &args.email)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
