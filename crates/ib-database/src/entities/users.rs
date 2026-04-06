@@ -1,10 +1,9 @@
 use chrono::Utc;
 use ib_core::user::UserToken;
 use sea_orm::{ActiveValue::Set, entity::prelude::*};
-use serde::{Deserialize, Serialize};
 
 #[sea_orm::model]
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -17,11 +16,6 @@ pub struct Model {
     pub password_hash: String,
     #[sea_orm(unique)]
     pub email_address: String,
-    #[sea_orm(unique)]
-    pub api_key_hash: Option<String>,
-    pub api_key_prefix: Option<String>,
-    pub api_key_created_at: Option<DateTimeWithTimeZone>,
-    pub api_key_last_used_at: Option<DateTimeWithTimeZone>,
     pub capabilities: String,
     pub change_password_on_login: bool,
     pub version: i64,

@@ -2712,6 +2712,7 @@ dependencies = [
  "chrono",
  "ib-core",
  "ib-utils",
+ "rand 0.10.0",
  "sea-orm",
  "sea-orm-migration",
  "serde",

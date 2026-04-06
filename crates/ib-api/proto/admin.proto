@@ -14,7 +14,6 @@ message UserResponse {
   string full_name                = 3;
   string email                    = 4;
   repeated string capabilities    = 5;
-  string api_key_prefix           = 6;  // empty string when no key set
   bool   change_password_on_login = 7;
   string created_at               = 8;  // RFC 3339
   string updated_at               = 9;  // RFC 3339
@@ -28,9 +27,11 @@ message SuperAdminRequest {
 }
 
 message SuperAdminResponse {
-  string username = 1;
-  string email    = 2;
-  string api_key  = 3;  // plaintext — shown once, never stored
+  string username   = 1;
+  string email      = 2;
+  string api_key    = 3;  // plaintext — shown once, never stored
+  string key_prefix = 4;
+  string key_type   = 5;
 }
 
 message CreateUserRequest {
@@ -60,14 +61,41 @@ message DeleteUserRequest {
   string username = 1;
 }
 
-message RotateApiKeyRequest {
+// ── API Key messages ──────────────────────────────────────────────────────────
+
+message ApiKeyEntry {
+  uint64 api_key_id   = 1;  // numeric ID — use for revocation
+  string key_type     = 2;  // "ib_live"
+  string key_prefix   = 3;  // first 12 chars for display
+  string name         = 4;  // optional label, empty string if unset
+  string created_at   = 5;  // RFC 3339
+  string last_used_at = 6;  // RFC 3339, empty string if never used
+}
+
+message CreateApiKeyRequest {
+  string username = 1;
+  string key_type = 2;  // e.g. "ib_live"
+  string name     = 3;  // optional label
+}
+
+message CreateApiKeyResponse {
+  string username   = 1;
+  string api_key    = 2;  // plaintext — shown once
+  string key_prefix = 3;
+  string key_type   = 4;
+  uint64 api_key_id = 5;  // numeric ID — use for future revocation
+}
+
+message RevokeApiKeyRequest {
+  uint64 api_key_id = 1;
+}
+
+message ListApiKeysRequest {
   string username = 1;
 }
 
-message ApiKeyResponse {
-  string username       = 1;
-  string api_key        = 2;  // plaintext — shown once
-  string api_key_prefix = 3;
+message ListApiKeysResponse {
+  repeated ApiKeyEntry keys = 1;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -78,10 +106,14 @@ service AdminService {
   rpc SuperAdmin(SuperAdminRequest) returns (SuperAdminResponse);
 
   // User management — requires SuperAdmin or Admin capability
-  rpc CreateUser(CreateUserRequest)     returns (UserResponse);
-  rpc GetUser(GetUserRequest)           returns (UserResponse);
-  rpc ListUsers(ListUsersRequest)       returns (ListUsersResponse);
-  rpc UpdateUser(UpdateUserRequest)     returns (UserResponse);
-  rpc DeleteUser(DeleteUserRequest)     returns (Empty);
-  rpc RotateApiKey(RotateApiKeyRequest) returns (ApiKeyResponse);
+  rpc CreateUser(CreateUserRequest)       returns (UserResponse);
+  rpc GetUser(GetUserRequest)             returns (UserResponse);
+  rpc ListUsers(ListUsersRequest)         returns (ListUsersResponse);
+  rpc UpdateUser(UpdateUserRequest)       returns (UserResponse);
+  rpc DeleteUser(DeleteUserRequest)       returns (Empty);
+
+  // API key management — requires SuperAdmin or Admin capability
+  rpc CreateApiKey(CreateApiKeyRequest)   returns (CreateApiKeyResponse);
+  rpc RevokeApiKey(RevokeApiKeyRequest)   returns (Empty);
+  rpc ListApiKeys(ListApiKeysRequest)     returns (ListApiKeysResponse);
 }

@@ -3,6 +3,7 @@ pub(crate) mod handler {
 
     use ib_core::{
         CoreServices, Error, RepositoryError,
+        api_key::NewApiKey,
         user::{Capabilities, Capability, NewUser},
     };
 
@@ -21,15 +22,23 @@ pub(crate) mod handler {
             &request.email,
             &request.full_name,
             Capabilities(vec![Capability::SuperAdmin]),
-            false, // admin supplies their own password — no forced change
+            false,
         )?;
-        svc.create_user(new_user).await?;
-        let (_user, api_key) = svc.rotate_api_key(&request.username).await?;
+        let user = svc.create_user(new_user).await?;
+
+        let new_key = NewApiKey {
+            user_id: user.id,
+            key_type: "ib_live".to_owned(),
+            name: Some("default".to_owned()),
+        };
+        let (key, plaintext) = core_services.api_key_service().create_key(new_key).await?;
 
         Ok(SuperAdminResponse {
             username: request.username,
             email: request.email,
-            api_key,
+            api_key: plaintext,
+            key_prefix: key.key_prefix,
+            key_type: key.key_type,
         })
     }
 }
@@ -65,76 +74,66 @@ pub mod api {
 
 #[cfg(test)]
 mod tests {
-    // ── super_admin — exempt from auth, tested via AdminService ──────────────
-
-    use ib_core::user::MockUserRepository;
+    use ib_core::{
+        api_key::{ApiKey, MockApiKeyRepository},
+        user::{Capabilities, Capability, MockUserRepository, User, UserToken},
+    };
     use tonic::{Code, Request};
 
     use crate::grpc::{
-        admin::tests::make_service_with_repo,
+        admin::tests::make_service_with_repos,
         admin_proto::{SuperAdminRequest, admin_service_server::AdminService},
     };
 
+    fn fake_user(id: u64) -> User {
+        use chrono::Utc;
+        User {
+            id,
+            token: UserToken::new(id),
+            username: "admin".to_owned(),
+            full_name: "Admin".to_owned(),
+            password_hash: "hash".to_owned(),
+            email_address: "admin@example.com".to_owned(),
+            capabilities: Capabilities(vec![Capability::SuperAdmin]),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn fake_key(id: u64, user_id: u64) -> ApiKey {
+        use chrono::Utc;
+        ApiKey {
+            id,
+            user_id,
+            key_type: "ib_live".to_owned(),
+            key_hash: "hash".to_owned(),
+            key_prefix: "ib_live_XXXX".to_owned(),
+            name: Some("default".to_owned()),
+            created_at: Utc::now(),
+            last_used_at: None,
+        }
+    }
+
     #[tokio::test]
     async fn super_admin_succeeds_when_no_existing_super_admin() {
-        use ib_core::user::{Capabilities, Capability, User, UserToken};
+        let user = fake_user(1);
+        let key = fake_key(10, 1);
+        let mut user_repo = MockUserRepository::new();
+        let mut api_key_repo = MockApiKeyRepository::new();
 
-        let mut repo = MockUserRepository::new();
-        let now = chrono::Utc::now();
-
-        // any_super_admin → false
-        repo.expect_any_super_admin().returning(|_| Box::pin(async { Ok(false) }));
-
-        // create → success
-        repo.expect_create().returning(move |_, _| {
-            Box::pin(async move {
-                Ok(User {
-                    id: 1,
-                    token: UserToken::new(1),
-                    username: "admin".to_owned(),
-                    full_name: "Admin".to_owned(),
-                    password_hash: "hash".to_owned(),
-                    email_address: "admin@example.com".to_owned(),
-                    api_key_hash: None,
-                    api_key_prefix: None,
-                    api_key_created_at: None,
-                    api_key_last_used_at: None,
-                    capabilities: Capabilities(vec![Capability::SuperAdmin]),
-                    change_password_on_login: false,
-                    version: 0,
-                    created_at: now,
-                    updated_at: now,
-                })
-            })
+        user_repo.expect_any_super_admin().returning(|_| Box::pin(async { Ok(false) }));
+        user_repo.expect_create().returning(move |_, _| {
+            let u = user.clone();
+            Box::pin(async move { Ok(u) })
+        });
+        api_key_repo.expect_create().returning(move |_, _, _, _| {
+            let k = key.clone();
+            Box::pin(async move { Ok(k) })
         });
 
-        // find_by_username (called by rotate_api_key)
-        repo.expect_find_by_username().returning(move |_, _| {
-            Box::pin(async move {
-                Ok(Some(User {
-                    id: 1,
-                    token: UserToken::new(1),
-                    username: "admin".to_owned(),
-                    full_name: "Admin".to_owned(),
-                    password_hash: "hash".to_owned(),
-                    email_address: "admin@example.com".to_owned(),
-                    api_key_hash: None,
-                    api_key_prefix: None,
-                    api_key_created_at: None,
-                    api_key_last_used_at: None,
-                    capabilities: Capabilities(vec![Capability::SuperAdmin]),
-                    change_password_on_login: false,
-                    version: 0,
-                    created_at: now,
-                    updated_at: now,
-                }))
-            })
-        });
-
-        // update (called by rotate_api_key to save the key hash)
-        repo.expect_update().returning(move |_, user| Box::pin(async move { Ok(user) }));
-
-        let svc = make_service_with_repo(repo);
+        let svc = make_service_with_repos(user_repo, api_key_repo);
         let req = Request::new(SuperAdminRequest {
             username: "admin".into(),
             full_name: "Admin".into(),
@@ -148,9 +147,9 @@ mod tests {
 
     #[tokio::test]
     async fn super_admin_fails_when_super_admin_already_exists() {
-        let mut repo = MockUserRepository::new();
-        repo.expect_any_super_admin().returning(|_| Box::pin(async { Ok(true) }));
-        let svc = make_service_with_repo(repo);
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_any_super_admin().returning(|_| Box::pin(async { Ok(true) }));
+        let svc = make_service_with_repos(user_repo, MockApiKeyRepository::new());
         let req = Request::new(SuperAdminRequest {
             username: "admin".into(),
             full_name: "Admin".into(),

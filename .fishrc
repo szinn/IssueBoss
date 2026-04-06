@@ -1,4 +1,4 @@
 # function: ib
 function ib
-    cargo run -- $argv
+    cargo run --features server -- $argv
 end

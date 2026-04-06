@@ -20,8 +20,12 @@ pub(crate) enum UserCommands {
     Update(UpdateArgs),
     #[command(about = "Delete a user")]
     Delete(DeleteArgs),
-    #[command(about = "Rotate a user's API key", name = "rotate-api-key")]
-    RotateApiKey(RotateApiKeyArgs),
+    #[command(about = "Create an API key for a user", name = "create-api-key")]
+    CreateApiKey(CreateApiKeyArgs),
+    #[command(about = "Revoke an API key by its token", name = "revoke-api-key")]
+    RevokeApiKey(RevokeApiKeyArgs),
+    #[command(about = "List all API keys for a user", name = "list-api-keys")]
+    ListApiKeys(ListApiKeysArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -59,7 +63,24 @@ pub(crate) struct DeleteArgs {
 }
 
 #[derive(Debug, clap::Args)]
-pub(crate) struct RotateApiKeyArgs {
+pub(crate) struct CreateApiKeyArgs {
+    #[arg(long)]
+    pub username: String,
+    #[arg(long, default_value = "ib_live")]
+    pub key_type: String,
+    #[arg(long, default_value = "")]
+    pub name: String,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct RevokeApiKeyArgs {
+    /// The numeric ID returned when the key was created.
+    #[arg(long)]
+    pub api_key_id: u64,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ListApiKeysArgs {
     #[arg(long)]
     pub username: String,
 }
@@ -73,17 +94,19 @@ pub(crate) async fn cmd_user(host: &str, port: u16, args: UserArgs) -> anyhow::R
         UserCommands::Get(a) => cmd_get(host, port, a).await,
         UserCommands::Update(a) => cmd_update(host, port, a).await,
         UserCommands::Delete(a) => cmd_delete(host, port, a).await,
-        UserCommands::RotateApiKey(a) => cmd_rotate_api_key(host, port, a).await,
+        UserCommands::CreateApiKey(a) => cmd_create_api_key(host, port, a).await,
+        UserCommands::RevokeApiKey(a) => cmd_revoke_api_key(host, port, a).await,
+        UserCommands::ListApiKeys(a) => cmd_list_api_keys(host, port, a).await,
     }
 }
 
 // ── Implementations ──────────────────────────────────────────────────────────
 
 async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<()> {
-    let user = user::api::create_user(host, port, &args.username, &args.full_name, &args.email, &args.password)
+    let u = user::api::create_user(host, port, &args.username, &args.full_name, &args.email, &args.password)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_user(&user);
+    print_user(&u);
     Ok(())
 }
 
@@ -93,19 +116,17 @@ async fn cmd_list(host: &str, port: u16) -> anyhow::Result<()> {
         println!("No users.");
         return Ok(());
     }
-    println!("{:<20} {:<25} {:<30} {:<15} API KEY PREFIX", "USERNAME", "FULL NAME", "EMAIL", "CAPABILITIES");
-    println!("{}", "-".repeat(110));
+    println!("{:<20} {:<25} {:<30} CAPABILITIES", "USERNAME", "FULL NAME", "EMAIL");
+    println!("{}", "-".repeat(90));
     for u in users {
-        let caps = u.capabilities.join(", ");
-        let prefix = if u.api_key_prefix.is_empty() { "-".to_owned() } else { u.api_key_prefix };
-        println!("{:<20} {:<25} {:<30} {:<15} {}", u.username, u.full_name, u.email, caps, prefix);
+        println!("{:<20} {:<25} {:<30} {}", u.username, u.full_name, u.email, u.capabilities.join(", "));
     }
     Ok(())
 }
 
 async fn cmd_get(host: &str, port: u16, args: GetArgs) -> anyhow::Result<()> {
-    let user = user::api::get_user(host, port, &args.username).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_user(&user);
+    let u = user::api::get_user(host, port, &args.username).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    print_user(&u);
     Ok(())
 }
 
@@ -113,10 +134,10 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
     if args.full_name.is_none() && args.email.is_none() {
         anyhow::bail!("At least one of --full-name or --email must be provided");
     }
-    let user = user::api::update_user(host, port, &args.username, args.full_name.as_deref(), args.email.as_deref())
+    let u = user::api::update_user(host, port, &args.username, args.full_name.as_deref(), args.email.as_deref())
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_user(&user);
+    print_user(&u);
     Ok(())
 }
 
@@ -126,14 +147,39 @@ async fn cmd_delete(host: &str, port: u16, args: DeleteArgs) -> anyhow::Result<(
     Ok(())
 }
 
-async fn cmd_rotate_api_key(host: &str, port: u16, args: RotateApiKeyArgs) -> anyhow::Result<()> {
-    let resp = user::api::rotate_api_key(host, port, &args.username)
+async fn cmd_create_api_key(host: &str, port: u16, args: CreateApiKeyArgs) -> anyhow::Result<()> {
+    let resp = user::api::create_api_key(host, port, &args.username, &args.key_type, &args.name)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("\nAPI key rotated for: {}", resp.username);
+    println!("\nAPI key created for: {}", resp.username);
+    println!("  Type:    {}", resp.key_type);
+    println!("  Prefix:  {}", resp.key_prefix);
+    println!("  ID:      {}", resp.api_key_id);
     println!("  API key: {}", resp.api_key);
-    println!("  Prefix:  {}", resp.api_key_prefix);
     println!("\nStore this key securely — it will not be shown again.");
+    Ok(())
+}
+
+async fn cmd_revoke_api_key(host: &str, port: u16, args: RevokeApiKeyArgs) -> anyhow::Result<()> {
+    user::api::revoke_api_key(host, port, args.api_key_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!("Revoked API key: {}", args.api_key_id);
+    Ok(())
+}
+
+async fn cmd_list_api_keys(host: &str, port: u16, args: ListApiKeysArgs) -> anyhow::Result<()> {
+    let resp = user::api::list_api_keys(host, port, &args.username).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    if resp.keys.is_empty() {
+        println!("No API keys for {}.", args.username);
+        return Ok(());
+    }
+    println!("{:<20} {:<12} {:<20} {:<25} LAST USED", "ID", "TYPE", "PREFIX", "NAME");
+    println!("{}", "-".repeat(100));
+    for k in resp.keys {
+        let last = if k.last_used_at.is_empty() { "-".to_owned() } else { k.last_used_at };
+        println!("{:<20} {:<12} {:<20} {:<25} {}", k.api_key_id, k.key_type, k.key_prefix, k.name, last);
+    }
     Ok(())
 }
 
@@ -146,7 +192,6 @@ fn print_user(u: &UserResponse) {
     println!("Email:      {}", u.email);
     println!("Token:      {}", u.token);
     println!("Caps:       {}", u.capabilities.join(", "));
-    println!("Key prefix: {}", if u.api_key_prefix.is_empty() { "(none)" } else { &u.api_key_prefix });
     println!("Created:    {}", u.created_at);
     println!("Updated:    {}", u.updated_at);
 }

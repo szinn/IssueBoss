@@ -92,7 +92,7 @@ mod tests {
     use crate::{
         Error, RepositoryError,
         api_key::{
-            model::{ApiKey, ApiKeyToken, NewApiKey},
+            model::{ApiKey, NewApiKey},
             repository::MockApiKeyRepository,
         },
         repository::testing::default_repository_service_builder,
@@ -106,7 +106,6 @@ mod tests {
     fn fake_key(id: u64, user_id: u64, key_type: &str) -> ApiKey {
         ApiKey {
             id,
-            token: ApiKeyToken::new(id),
             user_id,
             key_type: key_type.to_owned(),
             key_hash: "hash".to_owned(),

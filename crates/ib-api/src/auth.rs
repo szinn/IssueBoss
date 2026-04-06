@@ -8,7 +8,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use ib_core::{CoreServices, user::sha256_hex};
+use ib_core::{CoreServices, api_key::sha256_hex};
 use tonic::Status;
 
 /// A user successfully authenticated by API key.
@@ -31,12 +31,25 @@ pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>,
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let hash = sha256_hex(key);
-    let user = core_services
-        .user_service()
-        .find_by_api_key_hash(&hash)
+    let api_key = core_services
+        .api_key_service()
+        .find_by_hash(&hash)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let user = core_services
+        .user_service()
+        .find_by_id(api_key.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let svc = core_services.clone();
+    let key_id = api_key.id;
+    tokio::spawn(async move {
+        let _ = svc.api_key_service().record_usage(key_id).await;
+    });
 
     req.extensions_mut().insert(AuthenticatedUser(user));
     Ok(next.run(req).await)
@@ -54,12 +67,27 @@ pub async fn authenticate_grpc(core_services: &Arc<CoreServices>, metadata: &ton
         .ok_or_else(|| Status::unauthenticated("Missing x-api-key header"))?;
 
     let hash = sha256_hex(key);
-    core_services
-        .user_service()
-        .find_by_api_key_hash(&hash)
+    let api_key = core_services
+        .api_key_service()
+        .find_by_hash(&hash)
         .await
         .map_err(|e| Status::internal(e.to_string()))?
-        .ok_or_else(|| Status::unauthenticated("Invalid API key"))
+        .ok_or_else(|| Status::unauthenticated("Invalid API key"))?;
+
+    let user = core_services
+        .user_service()
+        .find_by_id(api_key.user_id)
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .ok_or_else(|| Status::unauthenticated("Invalid API key"))?;
+
+    let svc = core_services.clone();
+    let key_id = api_key.id;
+    tokio::spawn(async move {
+        let _ = svc.api_key_service().record_usage(key_id).await;
+    });
+
+    Ok(user)
 }
 
 /// Require that the authenticated user has `SuperAdmin` or `Admin` capability.
@@ -85,10 +113,6 @@ mod tests {
             full_name: "Alice".to_owned(),
             password_hash: "h".to_owned(),
             email_address: "a@b.com".to_owned(),
-            api_key_hash: None,
-            api_key_prefix: None,
-            api_key_created_at: None,
-            api_key_last_used_at: None,
             capabilities: Capabilities::default(),
             change_password_on_login: false,
             version: 0,
@@ -111,10 +135,6 @@ mod tests {
             full_name: "Admin".to_owned(),
             password_hash: "h".to_owned(),
             email_address: "a@b.com".to_owned(),
-            api_key_hash: None,
-            api_key_prefix: None,
-            api_key_created_at: None,
-            api_key_last_used_at: None,
             capabilities: Capabilities(vec![Capability::SuperAdmin]),
             change_password_on_login: false,
             version: 0,

@@ -5,8 +5,9 @@ use tonic::{Request, Response, Status};
 
 use crate::grpc::{
     admin_proto::{
-        ApiKeyResponse, CreateUserRequest, DeleteUserRequest, Empty, GetUserRequest, ListUsersRequest, ListUsersResponse, RotateApiKeyRequest,
-        SuperAdminRequest, SuperAdminResponse, UpdateUserRequest, UserResponse, admin_service_server::AdminService,
+        CreateApiKeyRequest, CreateApiKeyResponse, CreateUserRequest, DeleteUserRequest, Empty, GetUserRequest, ListApiKeysRequest, ListApiKeysResponse,
+        ListUsersRequest, ListUsersResponse, RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, UpdateUserRequest, UserResponse,
+        admin_service_server::AdminService,
     },
     error::map_core_error,
 };
@@ -21,7 +22,6 @@ fn user_to_proto(user: ib_core::user::User) -> UserResponse {
         full_name: user.full_name,
         email: user.email_address,
         capabilities: user.capabilities.0.iter().map(|c| format!("{c:?}")).collect(),
-        api_key_prefix: user.api_key_prefix.unwrap_or_default(),
         change_password_on_login: user.change_password_on_login,
         created_at: user.created_at.to_rfc3339(),
         updated_at: user.updated_at.to_rfc3339(),
@@ -92,10 +92,28 @@ impl AdminService for GrpcAdminService {
             .map_err(map_core_error)
     }
 
-    async fn rotate_api_key(&self, request: Request<RotateApiKeyRequest>) -> Result<Response<ApiKeyResponse>, Status> {
+    async fn create_api_key(&self, request: Request<CreateApiKeyRequest>) -> Result<Response<CreateApiKeyResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
-        user::handler::rotate_api_key(&self.core_services, request.into_inner())
+        user::handler::create_api_key(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn revoke_api_key(&self, request: Request<RevokeApiKeyRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        user::handler::revoke_api_key(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn list_api_keys(&self, request: Request<ListApiKeysRequest>) -> Result<Response<ListApiKeysResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        user::handler::list_api_keys(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -121,7 +139,6 @@ pub mod api {
         ))
     }
 
-    // Helper to attach API key header (no-op when env var is unset).
     pub(crate) fn with_api_key<T>(mut req: tonic::Request<T>) -> tonic::Request<T> {
         if let Ok(key) = std::env::var("ISSUEBOSS_API_KEY") {
             if let Ok(val) = key.parse() {
@@ -136,17 +153,23 @@ pub mod api {
 mod tests {
     use std::sync::Arc;
 
-    use ib_core::{CoreServices, create_services, user::MockUserRepository};
+    use ib_core::{CoreServices, api_key::MockApiKeyRepository, create_services, user::MockUserRepository};
 
     use super::GrpcAdminService;
 
-    pub(crate) fn make_core_services(repo: MockUserRepository) -> Arc<CoreServices> {
+    pub(crate) fn make_core_services(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> Arc<CoreServices> {
         use ib_core::repository::testing::default_repository_service_builder;
-        let repo_svc = Arc::new(default_repository_service_builder().user_repository(Arc::new(repo)).build().unwrap());
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(api_key_repo))
+                .build()
+                .unwrap(),
+        );
         create_services(repo_svc)
     }
 
-    pub(crate) fn make_service_with_repo(repo: MockUserRepository) -> GrpcAdminService {
-        GrpcAdminService::new(make_core_services(repo))
+    pub(crate) fn make_service_with_repos(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> GrpcAdminService {
+        GrpcAdminService::new(make_core_services(user_repo, api_key_repo))
     }
 }

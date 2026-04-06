@@ -12,13 +12,18 @@ mod transaction;
 
 use ib_core::{
     Error,
+    api_key::ApiKeyRepository,
     repository::{Repository, RepositoryService, RepositoryServiceBuilder},
     user::UserRepository,
 };
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 
-use crate::{adapters::UserRepositoryAdapter, migrations::Migrator, repository::RepositoryImpl};
+use crate::{
+    adapters::{ApiKeyRepositoryAdapter, UserRepositoryAdapter},
+    migrations::Migrator,
+    repository::RepositoryImpl,
+};
 
 pub async fn open_database(database_url: &str) -> Result<DatabaseConnection, Error> {
     tracing::debug!("Connecting to database...");
@@ -39,6 +44,7 @@ pub async fn create_repository_service(database: DatabaseConnection) -> Result<A
     let repository_service = RepositoryServiceBuilder::default()
         .repository(Arc::new(RepositoryImpl::new(database)) as Arc<dyn Repository>)
         .user_repository(Arc::new(UserRepositoryAdapter::new()) as Arc<dyn UserRepository>)
+        .api_key_repository(Arc::new(ApiKeyRepositoryAdapter::new()) as Arc<dyn ApiKeyRepository>)
         .build()
         .map_err(|e| Error::Infrastructure(e.to_string()))?;
 

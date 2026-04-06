@@ -1,24 +1,19 @@
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use chrono::{DateTime, Utc};
-use ib_utils::{Token, define_token_prefix};
 use sha2::{Digest, Sha256};
 
 use crate::user::UserId;
 
-define_token_prefix!(ApiKeyTokenPrefix, "AK_");
-
 pub type ApiKeyId = u64;
-pub type ApiKeyToken = Token<ApiKeyTokenPrefix, ApiKeyId, { i64::MAX as u128 }>;
 
 #[derive(Debug, Clone)]
 pub struct ApiKey {
     pub id: ApiKeyId,
-    pub token: ApiKeyToken,
     pub user_id: UserId,
+    pub name: Option<String>,
     pub key_type: String,
     pub key_hash: String,
     pub key_prefix: String,
-    pub name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
 }

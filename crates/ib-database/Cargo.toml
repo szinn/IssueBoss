@@ -7,6 +7,7 @@ rust-version.workspace = true
 [dependencies]
 ib-core.workspace = true
 ib-utils.workspace = true
+rand.workspace = true
 sea-orm.workspace = true
 sea-orm-migration.workspace = true
 async-trait.workspace = true

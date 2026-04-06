@@ -16,8 +16,6 @@ pub trait UserService: Send + Sync {
     async fn find_by_token(&self, token: UserToken) -> Result<Option<User>, Error>;
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, Error>;
     async fn list_users(&self) -> Result<Vec<User>, Error>;
-    async fn find_by_api_key_hash(&self, hash: &str) -> Result<Option<User>, Error>;
-    async fn rotate_api_key(&self, username: &str) -> Result<(User, String), Error>;
     async fn any_super_admin(&self) -> Result<bool, Error>;
 }
 
@@ -68,29 +66,6 @@ impl UserService for UserServiceImpl {
         with_read_only_transaction!(self, user_repository, |tx| user_repository.list(tx).await)
     }
 
-    async fn find_by_api_key_hash(&self, hash: &str) -> Result<Option<User>, Error> {
-        let hash = hash.to_owned();
-        with_read_only_transaction!(self, user_repository, |tx| user_repository.find_by_api_key_hash(tx, &hash).await)
-    }
-
-    async fn rotate_api_key(&self, username: &str) -> Result<(User, String), Error> {
-        use crate::user::generate_api_key;
-        let username = username.to_owned();
-        with_transaction!(self, user_repository, |tx| {
-            let mut user = user_repository
-                .find_by_username(tx, &username)
-                .await?
-                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            let key = generate_api_key();
-            user.api_key_hash = Some(key.hash);
-            user.api_key_prefix = Some(key.prefix);
-            user.api_key_created_at = Some(chrono::Utc::now());
-            user.api_key_last_used_at = None;
-            let updated = user_repository.update(tx, user).await?;
-            Ok((updated, key.plaintext))
-        })
-    }
-
     async fn any_super_admin(&self) -> Result<bool, Error> {
         with_read_only_transaction!(self, user_repository, |tx| user_repository.any_super_admin(tx).await)
     }
@@ -122,10 +97,6 @@ mod tests {
             full_name: format!("Test {username}"),
             password_hash: "hash".to_owned(),
             email_address: format!("{username}@example.com"),
-            api_key_hash: None,
-            api_key_prefix: None,
-            api_key_created_at: None,
-            api_key_last_used_at: None,
             capabilities: Capabilities::default(),
             change_password_on_login: false,
             version: 0,
@@ -260,53 +231,6 @@ mod tests {
         });
         let result = make_svc(repo).list_users().await.unwrap();
         assert_eq!(result.len(), 2);
-    }
-
-    // ─── find_by_api_key_hash ─────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn find_by_api_key_hash_found() {
-        let user = fake_user(1, "alice");
-        let mut repo = MockUserRepository::new();
-        repo.expect_find_by_api_key_hash().returning(move |_, _| {
-            let u = user.clone();
-            Box::pin(async move { Ok(Some(u)) })
-        });
-        let result = make_svc(repo).find_by_api_key_hash("somehash").await;
-        assert_eq!(result.unwrap().unwrap().username, "alice");
-    }
-
-    // ─── rotate_api_key ───────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn rotate_api_key_updates_and_returns_plaintext() {
-        let user = fake_user(1, "alice");
-        let updated = {
-            let mut u = user.clone();
-            u.api_key_hash = Some("newhash".to_owned());
-            u.api_key_prefix = Some("ib_live_XXXX".to_owned());
-            u
-        };
-        let mut repo = MockUserRepository::new();
-        repo.expect_find_by_username().returning(move |_, _| {
-            let u = user.clone();
-            Box::pin(async move { Ok(Some(u)) })
-        });
-        repo.expect_update().returning(move |_, _| {
-            let u = updated.clone();
-            Box::pin(async move { Ok(u) })
-        });
-        let (returned_user, plaintext) = make_svc(repo).rotate_api_key("alice").await.unwrap();
-        assert_eq!(returned_user.username, "alice");
-        assert!(plaintext.starts_with("ib_live_"));
-    }
-
-    #[tokio::test]
-    async fn rotate_api_key_not_found() {
-        let mut repo = MockUserRepository::new();
-        repo.expect_find_by_username().returning(|_, _| Box::pin(async { Ok(None) }));
-        let result = make_svc(repo).rotate_api_key("ghost").await;
-        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
     // ─── any_super_admin ──────────────────────────────────────────────────────
