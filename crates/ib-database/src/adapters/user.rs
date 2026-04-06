@@ -50,6 +50,17 @@ impl From<users::Model> for User {
 
 #[async_trait::async_trait]
 impl UserRepository for UserRepositoryAdapter {
+    async fn list(&self, transaction: &dyn Transaction) -> Result<Vec<User>, Error> {
+        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+        Ok(UserEntity::find()
+            .all(transaction)
+            .await
+            .map_err(handle_dberr)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     async fn find_by_id(&self, transaction: &dyn Transaction, id: UserId) -> Result<Option<User>, Error> {
         if id == 0 {
             return Err(Error::InvalidId(id));
