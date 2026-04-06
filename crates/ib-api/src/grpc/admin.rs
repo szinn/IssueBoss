@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use ib_core::CoreServices;
 use tonic::{Request, Response, Status};
 
 use crate::grpc::{
@@ -8,11 +11,14 @@ use crate::grpc::{
     error::map_core_error,
 };
 
-pub struct GrpcAdminService;
+pub struct GrpcAdminService {
+    #[allow(dead_code)]
+    core_services: Arc<CoreServices>,
+}
 
 impl GrpcAdminService {
-    pub(crate) fn new() -> Self {
-        Self
+    pub(crate) fn new(core_services: Arc<CoreServices>) -> Self {
+        Self { core_services }
     }
 }
 
@@ -110,14 +116,23 @@ pub mod api {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use ib_core::{create_services, repository::testing::default_repository_service_builder};
     use tonic::{Code, Request};
 
     use super::GrpcAdminService;
     use crate::grpc::admin_proto::{SuperAdminRequest, admin_service_server::AdminService};
 
+    fn make_service() -> GrpcAdminService {
+        let repo_svc = Arc::new(default_repository_service_builder().build().unwrap());
+        let core = create_services(repo_svc);
+        GrpcAdminService::new(core)
+    }
+
     #[tokio::test]
     async fn super_admin_stub_returns_already_exists() {
-        let svc = GrpcAdminService::new();
+        let svc = make_service();
         let req = Request::new(SuperAdminRequest {
             username: "admin".into(),
             full_name: "Admin User".into(),

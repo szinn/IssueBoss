@@ -34,7 +34,7 @@ impl IntoSubsystem<Error> for GrpcSubsystem {
             .register_encoded_file_descriptor_set(admin_proto::FILE_DESCRIPTOR_SET)
             .build_v1()
             .unwrap();
-        let admin_service = admin::GrpcAdminService::new();
+        let admin_service = admin::GrpcAdminService::new(self.core_services.clone());
 
         tracing::info!("Listening on {}", addr);
         tokio::select! {

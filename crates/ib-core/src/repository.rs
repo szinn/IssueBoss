@@ -33,7 +33,7 @@ pub trait Transaction: Any + Send + Sync {
 }
 
 #[async_trait::async_trait]
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "test-support"), mockall::automock)]
 #[allow(unused_lifetimes)]
 pub trait Repository: Send + Sync {
     async fn begin(&self) -> Result<Box<dyn Transaction>, Error>;
@@ -122,15 +122,15 @@ macro_rules! with_read_only_transaction {
 
 /// Shared test helpers — a no-op `MockTransaction` and a pre-wired
 /// `MockRepository` for service unit tests.
-#[cfg(test)]
-pub(crate) mod testing {
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing {
     use std::{any::Any, sync::Arc};
 
     use super::{MockRepository, RepositoryServiceBuilder, Transaction};
     use crate::{Error, user::repository::MockUserRepository};
 
     /// A no-op transaction for unit tests.
-    pub(crate) struct MockTransaction;
+    pub struct MockTransaction;
 
     #[async_trait::async_trait]
     impl Transaction for MockTransaction {
@@ -148,7 +148,7 @@ pub(crate) mod testing {
     }
 
     /// Returns a `MockRepository` pre-configured to open no-op transactions.
-    pub(crate) fn make_mock_repo() -> MockRepository {
+    pub fn make_mock_repo() -> MockRepository {
         let mut r = MockRepository::new();
         r.expect_begin()
             .returning(|| Box::pin(async { Ok(Box::new(MockTransaction) as Box<dyn Transaction>) }));
@@ -159,7 +159,7 @@ pub(crate) mod testing {
 
     /// Returns a `RepositoryServiceBuilder` pre-populated with default mocks.
     /// Override individual repositories for the one(s) under test.
-    pub(crate) fn default_repository_service_builder() -> RepositoryServiceBuilder {
+    pub fn default_repository_service_builder() -> RepositoryServiceBuilder {
         RepositoryServiceBuilder::default()
             .repository(Arc::new(make_mock_repo()))
             .user_repository(Arc::new(MockUserRepository::new()))

@@ -27,5 +27,10 @@ tonic-reflection.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+ib-core = { workspace = true, features = ["test-support"] }
+mockall.workspace = true
+tokio.workspace = true
+
 [build-dependencies]
 tonic-prost-build.workspace = true
