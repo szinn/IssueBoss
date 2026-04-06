@@ -94,7 +94,7 @@ async fn cmd_list(host: &str, port: u16) -> anyhow::Result<()> {
         return Ok(());
     }
     println!("{:<20} {:<25} {:<30} {:<15} API KEY PREFIX", "USERNAME", "FULL NAME", "EMAIL", "CAPABILITIES");
-    println!("{}", "-".repeat(100));
+    println!("{}", "-".repeat(110));
     for u in users {
         let caps = u.capabilities.join(", ");
         let prefix = if u.api_key_prefix.is_empty() { "-".to_owned() } else { u.api_key_prefix };

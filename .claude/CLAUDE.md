@@ -26,6 +26,10 @@ Use only `jj` commands for all version control operations.
 This project follows hexagonal (ports & adapters) architecture. Dependencies point inward
 toward the core domain. Never introduce dependencies from `core` to outer crates.
 
+The architecture is the same structure as BookBoss (<https://github.com/szinn/BookBoss>).
+If you are going to do something new, checking out BookBoss (@../BookBoss) to see if the
+pattern (or code) already exists there and suggest that to the user as an option.
+
 ### Core Crate Organization
 
 The core crate uses **domain-based modules** — each domain concept groups its model,
