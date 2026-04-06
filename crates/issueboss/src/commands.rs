@@ -1,4 +1,5 @@
 pub(crate) mod server;
+pub(crate) mod super_admin;
 
 #[derive(Debug, clap::Parser)]
 #[command(
@@ -35,4 +36,7 @@ pub(crate) struct CommandLine {
 pub(crate) enum Commands {
     #[command(about = "Start server", display_order = 10)]
     Server,
+
+    #[command(about = "Bootstrap the SuperAdmin user", display_order = 20, name = "super-admin")]
+    SuperAdmin(super_admin::SuperAdminArgs),
 }

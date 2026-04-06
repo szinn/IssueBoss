@@ -28,6 +28,7 @@ tonic.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+chrono.workspace = true
 ib-core = { workspace = true, features = ["test-support"] }
 mockall.workspace = true
 tokio.workspace = true

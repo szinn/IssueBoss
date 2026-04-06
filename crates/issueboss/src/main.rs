@@ -24,5 +24,6 @@ async fn main() -> anyhow::Result<()> {
             init_logging()?;
             cmd_server(config).await
         }
+        Commands::SuperAdmin(args) => commands::super_admin::cmd_super_admin(&cli.host, cli.port, args).await,
     }
 }

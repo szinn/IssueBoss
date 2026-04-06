@@ -1,5 +1,5 @@
 mod error;
-mod grpc;
+pub mod grpc;
 mod mcp;
 
 use std::sync::Arc;
