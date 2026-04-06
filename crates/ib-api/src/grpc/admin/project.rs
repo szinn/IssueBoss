@@ -3,7 +3,7 @@ pub(crate) mod handler {
 
     use ib_core::{
         CoreServices, Error, RepositoryError,
-        project::{NewProject, NewProjectMember, ProjectToken},
+        project::{NewProject, NewProjectMember},
         user::Capabilities,
     };
 
@@ -23,10 +23,9 @@ pub(crate) mod handler {
     }
 
     pub async fn update_project(core: &Arc<CoreServices>, req: UpdateProjectRequest) -> Result<ProjectResponse, Error> {
-        let token = ProjectToken::parse(&req.token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.token)))?;
         let mut project = core
             .project_service()
-            .find_by_token(token)
+            .find_by_slug(&req.slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         if let Some(name) = req.name {
@@ -37,10 +36,9 @@ pub(crate) mod handler {
     }
 
     pub async fn delete_project(core: &Arc<CoreServices>, req: DeleteProjectRequest) -> Result<Empty, Error> {
-        let token = ProjectToken::parse(&req.token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.token)))?;
         let project = core
             .project_service()
-            .find_by_token(token)
+            .find_by_slug(&req.slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         core.project_service().delete_project(project.id).await?;
@@ -64,10 +62,9 @@ pub(crate) mod handler {
     }
 
     pub async fn add_project_member(core: &Arc<CoreServices>, req: AddProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
-        let project_token = ProjectToken::parse(&req.project_token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.project_token)))?;
         let project = core
             .project_service()
-            .find_by_token(project_token)
+            .find_by_slug(&req.project_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let user = core
@@ -88,10 +85,9 @@ pub(crate) mod handler {
     }
 
     pub async fn update_project_member(core: &Arc<CoreServices>, req: UpdateProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
-        let project_token = ProjectToken::parse(&req.project_token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.project_token)))?;
         let project = core
             .project_service()
-            .find_by_token(project_token)
+            .find_by_slug(&req.project_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let user = core
@@ -110,10 +106,9 @@ pub(crate) mod handler {
     }
 
     pub(crate) async fn remove_project_member(core: &Arc<CoreServices>, req: RemoveProjectMemberRequest) -> Result<Empty, Error> {
-        let project_token = ProjectToken::parse(&req.project_token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.project_token)))?;
         let project = core
             .project_service()
-            .find_by_token(project_token)
+            .find_by_slug(&req.project_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let user = core
@@ -126,10 +121,9 @@ pub(crate) mod handler {
     }
 
     pub(crate) async fn list_project_members(core: &Arc<CoreServices>, req: ListProjectMembersRequest) -> Result<ListProjectMembersResponse, Error> {
-        let project_token = ProjectToken::parse(&req.project_token).map_err(|_| Error::Validation(format!("invalid project token: {}", req.project_token)))?;
         let project = core
             .project_service()
-            .find_by_token(project_token)
+            .find_by_slug(&req.project_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let members = core.project_service().list_members(project.id).await?;
@@ -204,10 +198,10 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
-    pub async fn update_project(host: &str, port: u16, token: &str, name: Option<&str>) -> Result<ProjectResponse, Error> {
+    pub async fn update_project(host: &str, port: u16, slug: &str, name: Option<&str>) -> Result<ProjectResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(UpdateProjectRequest {
-            token: token.to_owned(),
+            slug: slug.to_owned(),
             name: name.map(str::to_owned),
         }));
         client
@@ -217,9 +211,9 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
-    pub async fn delete_project(host: &str, port: u16, token: &str) -> Result<Empty, Error> {
+    pub async fn delete_project(host: &str, port: u16, slug: &str) -> Result<Empty, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
-        let req = with_api_key(tonic::Request::new(DeleteProjectRequest { token: token.to_owned() }));
+        let req = with_api_key(tonic::Request::new(DeleteProjectRequest { slug: slug.to_owned() }));
         client
             .delete_project(req)
             .await
@@ -230,13 +224,13 @@ pub mod api {
     pub async fn add_project_member(
         host: &str,
         port: u16,
-        project_token: &str,
+        project_slug: &str,
         username: &str,
         capabilities: Vec<String>,
     ) -> Result<ProjectMemberResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(AddProjectMemberRequest {
-            project_token: project_token.to_owned(),
+            project_slug: project_slug.to_owned(),
             username: username.to_owned(),
             capabilities,
         }));
@@ -250,13 +244,13 @@ pub mod api {
     pub async fn update_project_member(
         host: &str,
         port: u16,
-        project_token: &str,
+        project_slug: &str,
         username: &str,
         capabilities: Vec<String>,
     ) -> Result<ProjectMemberResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(UpdateProjectMemberRequest {
-            project_token: project_token.to_owned(),
+            project_slug: project_slug.to_owned(),
             username: username.to_owned(),
             capabilities,
         }));
@@ -267,10 +261,10 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
-    pub async fn remove_project_member(host: &str, port: u16, project_token: &str, username: &str) -> Result<Empty, Error> {
+    pub async fn remove_project_member(host: &str, port: u16, project_slug: &str, username: &str) -> Result<Empty, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(RemoveProjectMemberRequest {
-            project_token: project_token.to_owned(),
+            project_slug: project_slug.to_owned(),
             username: username.to_owned(),
         }));
         client
@@ -280,10 +274,10 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
-    pub async fn list_project_members(host: &str, port: u16, project_token: &str) -> Result<ListProjectMembersResponse, Error> {
+    pub async fn list_project_members(host: &str, port: u16, project_slug: &str) -> Result<ListProjectMembersResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(ListProjectMembersRequest {
-            project_token: project_token.to_owned(),
+            project_slug: project_slug.to_owned(),
         }));
         client
             .list_project_members(req)

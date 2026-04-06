@@ -116,12 +116,12 @@ message CreateProjectRequest {
 }
 
 message UpdateProjectRequest {
-  string          token = 1;
-  optional string name  = 2;
+  string          slug = 1;
+  optional string name = 2;
 }
 
 message DeleteProjectRequest {
-  string token = 1;
+  string slug = 1;
 }
 
 message GetProjectRequest {
@@ -146,24 +146,24 @@ message ProjectMemberResponse {
 }
 
 message AddProjectMemberRequest {
-  string          project_token = 1;
-  string          username      = 2;
-  repeated string capabilities  = 3;
+  string          project_slug = 1;
+  string          username     = 2;
+  repeated string capabilities = 3;
 }
 
 message UpdateProjectMemberRequest {
-  string          project_token = 1;
-  string          username      = 2;
-  repeated string capabilities  = 3;
+  string          project_slug = 1;
+  string          username     = 2;
+  repeated string capabilities = 3;
 }
 
 message RemoveProjectMemberRequest {
-  string project_token = 1;
-  string username      = 2;
+  string project_slug = 1;
+  string username     = 2;
 }
 
 message ListProjectMembersRequest {
-  string project_token = 1;
+  string project_slug = 1;
 }
 
 message ListProjectMembersResponse {

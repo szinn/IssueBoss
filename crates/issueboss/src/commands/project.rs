@@ -51,25 +51,22 @@ pub(crate) struct GetArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UpdateArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub token: String,
+    pub slug: String,
     #[arg(long)]
     pub name: Option<String>,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct DeleteArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub token: String,
+    pub slug: String,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct AddMemberArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub project_token: String,
+    pub slug: String,
     #[arg(long)]
     pub username: String,
     /// Capabilities (may be specified multiple times)
@@ -79,9 +76,8 @@ pub(crate) struct AddMemberArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UpdateMemberArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub project_token: String,
+    pub slug: String,
     #[arg(long)]
     pub username: String,
     /// Capabilities (may be specified multiple times)
@@ -91,18 +87,16 @@ pub(crate) struct UpdateMemberArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct RemoveMemberArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub project_token: String,
+    pub slug: String,
     #[arg(long)]
     pub username: String,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListMembersArgs {
-    /// Project token (P_xxx)
     #[arg(long)]
-    pub project_token: String,
+    pub slug: String,
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────
@@ -155,7 +149,7 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
     if args.name.is_none() {
         anyhow::bail!("--name must be provided");
     }
-    let p = project::api::update_project(host, port, &args.token, args.name.as_deref())
+    let p = project::api::update_project(host, port, &args.slug, args.name.as_deref())
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     print_project(&p);
@@ -163,15 +157,13 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
 }
 
 async fn cmd_delete(host: &str, port: u16, args: DeleteArgs) -> anyhow::Result<()> {
-    project::api::delete_project(host, port, &args.token)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("Deleted project: {}", args.token);
+    project::api::delete_project(host, port, &args.slug).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!("Deleted project: {}", args.slug);
     Ok(())
 }
 
 async fn cmd_add_member(host: &str, port: u16, args: AddMemberArgs) -> anyhow::Result<()> {
-    let m = project::api::add_project_member(host, port, &args.project_token, &args.username, args.capability)
+    let m = project::api::add_project_member(host, port, &args.slug, &args.username, args.capability)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     print_member(&m);
@@ -179,7 +171,7 @@ async fn cmd_add_member(host: &str, port: u16, args: AddMemberArgs) -> anyhow::R
 }
 
 async fn cmd_update_member(host: &str, port: u16, args: UpdateMemberArgs) -> anyhow::Result<()> {
-    let m = project::api::update_project_member(host, port, &args.project_token, &args.username, args.capability)
+    let m = project::api::update_project_member(host, port, &args.slug, &args.username, args.capability)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     print_member(&m);
@@ -187,15 +179,15 @@ async fn cmd_update_member(host: &str, port: u16, args: UpdateMemberArgs) -> any
 }
 
 async fn cmd_remove_member(host: &str, port: u16, args: RemoveMemberArgs) -> anyhow::Result<()> {
-    project::api::remove_project_member(host, port, &args.project_token, &args.username)
+    project::api::remove_project_member(host, port, &args.slug, &args.username)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("Removed {} from project {}", args.username, args.project_token);
+    println!("Removed {} from project {}", args.username, args.slug);
     Ok(())
 }
 
 async fn cmd_list_members(host: &str, port: u16, args: ListMembersArgs) -> anyhow::Result<()> {
-    let resp = project::api::list_project_members(host, port, &args.project_token)
+    let resp = project::api::list_project_members(host, port, &args.slug)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     if resp.members.is_empty() {
