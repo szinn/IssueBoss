@@ -1,6 +1,6 @@
 use sea_orm_migration::{
     prelude::*,
-    schema::{big_integer, string, timestamp_with_time_zone, timestamp_with_time_zone_null},
+    schema::{big_integer, boolean, string, timestamp_with_time_zone, timestamp_with_time_zone_null},
 };
 
 #[derive(DeriveMigrationName)]
@@ -25,6 +25,7 @@ impl MigrationTrait for Migration {
                     .col(timestamp_with_time_zone_null(Users::ApiKeyCreatedAt))
                     .col(timestamp_with_time_zone_null(Users::ApiKeyLastUsedAt))
                     .col(string(Users::Capabilities))
+                    .col(boolean(Users::ChangePasswordOnLogin).not_null().default(false))
                     .col(big_integer(Users::Version))
                     .col(timestamp_with_time_zone(Users::CreatedAt))
                     .col(timestamp_with_time_zone(Users::UpdatedAt))
@@ -52,6 +53,7 @@ enum Users {
     ApiKeyCreatedAt,
     ApiKeyLastUsedAt,
     Capabilities,
+    ChangePasswordOnLogin,
     Version,
     CreatedAt,
     UpdatedAt,

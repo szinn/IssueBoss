@@ -56,6 +56,7 @@ pub struct User {
     pub api_key_created_at: Option<DateTime<Utc>>,
     pub api_key_last_used_at: Option<DateTime<Utc>>,
     pub capabilities: Capabilities,
+    pub change_password_on_login: bool,
     pub version: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -70,6 +71,7 @@ pub struct NewUser {
     pub password_hash: String,
     pub email_address: String,
     pub capabilities: Capabilities,
+    pub change_password_on_login: bool,
 }
 
 impl NewUser {
@@ -79,6 +81,7 @@ impl NewUser {
         email_address: impl Into<String>,
         full_name: impl Into<String>,
         capabilities: Capabilities,
+        change_password_on_login: bool,
     ) -> Result<Self, crate::Error> {
         let full_name = full_name.into();
         if full_name.trim().is_empty() {
@@ -93,6 +96,7 @@ impl NewUser {
             password_hash,
             email_address: email_address.into(),
             capabilities,
+            change_password_on_login,
         })
     }
 

@@ -23,6 +23,7 @@ pub struct Model {
     pub api_key_created_at: Option<DateTimeWithTimeZone>,
     pub api_key_last_used_at: Option<DateTimeWithTimeZone>,
     pub capabilities: String,
+    pub change_password_on_login: bool,
     pub version: i64,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

@@ -92,6 +92,7 @@ mod tests {
             api_key_created_at: None,
             api_key_last_used_at: None,
             capabilities: Capabilities::default(),
+            change_password_on_login: false,
             version: 0,
             created_at: now,
             updated_at: now,
@@ -105,6 +106,7 @@ mod tests {
             format!("{username}@example.com"),
             format!("Test {username}"),
             Capabilities::default(),
+            false,
         )
         .unwrap()
     }

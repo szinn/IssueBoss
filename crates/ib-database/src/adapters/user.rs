@@ -40,6 +40,7 @@ impl From<users::Model> for User {
             api_key_created_at: model.api_key_created_at.map(|dt| dt.with_timezone(&chrono::Utc)),
             api_key_last_used_at: model.api_key_last_used_at.map(|dt| dt.with_timezone(&chrono::Utc)),
             capabilities,
+            change_password_on_login: model.change_password_on_login,
             version: model.version as u64,
             created_at: model.created_at.with_timezone(&chrono::Utc),
             updated_at: model.updated_at.with_timezone(&chrono::Utc),
@@ -103,6 +104,7 @@ impl UserRepository for UserRepositoryAdapter {
             api_key_created_at: Set(None),
             api_key_last_used_at: Set(None),
             capabilities: Set(capabilities),
+            change_password_on_login: Set(new_user.change_password_on_login),
             version: Set(0),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
@@ -154,6 +156,9 @@ impl UserRepository for UserRepositoryAdapter {
         let new_caps = serde_json::to_string(&user.capabilities).map_err(|e| Error::Infrastructure(e.to_string()))?;
         if existing.capabilities != new_caps {
             updater.capabilities = Set(new_caps);
+        }
+        if existing.change_password_on_login != user.change_password_on_login {
+            updater.change_password_on_login = Set(user.change_password_on_login);
         }
 
         let result = updater.update(transaction).await.map_err(handle_dberr)?;
@@ -218,6 +223,7 @@ mod tests {
             format!("{username}@example.com"),
             format!("Test {username}"),
             Capabilities::default(),
+            false,
         )
         .unwrap()
     }
@@ -252,6 +258,7 @@ mod tests {
             "admin@example.com",
             "Admin User",
             Capabilities(vec![Capability::SuperAdmin]),
+            false,
         )
         .unwrap();
         svc.user_repository().create(&*tx, new_user).await.unwrap();
