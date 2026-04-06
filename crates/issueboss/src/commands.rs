@@ -1,3 +1,4 @@
+pub(crate) mod project;
 pub(crate) mod server;
 pub(crate) mod super_admin;
 pub(crate) mod user;
@@ -43,4 +44,7 @@ pub(crate) enum Commands {
 
     #[command(about = "Manage users", display_order = 30)]
     User(user::UserArgs),
+
+    #[command(about = "Manage projects", display_order = 40)]
+    Project(project::ProjectArgs),
 }

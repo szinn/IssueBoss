@@ -154,7 +154,7 @@ pub(crate) mod handler {
     }
 }
 
-pub(crate) mod api {
+pub mod api {
     use ib_core::Error;
     use tonic::transport::Channel;
 
