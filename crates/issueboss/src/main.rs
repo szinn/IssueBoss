@@ -25,5 +25,9 @@ async fn main() -> anyhow::Result<()> {
             cmd_server(config).await
         }
         Commands::SuperAdmin(args) => commands::super_admin::cmd_super_admin(&cli.host, cli.port, args).await,
+        Commands::User(args) => {
+            use crate::commands::user::cmd_user;
+            cmd_user(&cli.host, cli.port, args).await
+        }
     }
 }

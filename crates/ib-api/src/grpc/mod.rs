@@ -9,7 +9,7 @@ use crate::error::ApiError;
 pub mod admin;
 mod error;
 
-pub(crate) mod admin_proto {
+pub mod admin_proto {
     tonic::include_proto!("issueboss.admin");
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("system_descriptor");
 }

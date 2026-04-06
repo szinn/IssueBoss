@@ -1,5 +1,6 @@
 pub(crate) mod server;
 pub(crate) mod super_admin;
+pub(crate) mod user;
 
 #[derive(Debug, clap::Parser)]
 #[command(
@@ -39,4 +40,7 @@ pub(crate) enum Commands {
 
     #[command(about = "Bootstrap the SuperAdmin user", display_order = 20, name = "super-admin")]
     SuperAdmin(super_admin::SuperAdminArgs),
+
+    #[command(about = "Manage users", display_order = 30)]
+    User(user::UserArgs),
 }
