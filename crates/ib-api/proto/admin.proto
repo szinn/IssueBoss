@@ -98,6 +98,78 @@ message ListApiKeysResponse {
   repeated ApiKeyEntry keys = 1;
 }
 
+// ── Project messages ──────────────────────────────────────────────────────────
+
+message ProjectResponse {
+  string token      = 1;
+  string name       = 2;
+  string slug       = 3;
+  string prefix     = 4;
+  string created_at = 5;  // RFC 3339
+  string updated_at = 6;  // RFC 3339
+}
+
+message CreateProjectRequest {
+  string name   = 1;
+  string slug   = 2;
+  string prefix = 3;
+}
+
+message UpdateProjectRequest {
+  string          token = 1;
+  optional string name  = 2;
+}
+
+message DeleteProjectRequest {
+  string token = 1;
+}
+
+message GetProjectRequest {
+  string slug = 1;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated ProjectResponse projects = 1;
+}
+
+// ── Project member messages ───────────────────────────────────────────────────
+
+message ProjectMemberResponse {
+  string          project_token = 1;
+  string          user_token    = 2;
+  string          username      = 3;
+  repeated string capabilities  = 4;
+  string          created_at    = 5;  // RFC 3339
+  string          updated_at    = 6;  // RFC 3339
+}
+
+message AddProjectMemberRequest {
+  string          project_token = 1;
+  string          username      = 2;
+  repeated string capabilities  = 3;
+}
+
+message UpdateProjectMemberRequest {
+  string          project_token = 1;
+  string          username      = 2;
+  repeated string capabilities  = 3;
+}
+
+message RemoveProjectMemberRequest {
+  string project_token = 1;
+  string username      = 2;
+}
+
+message ListProjectMembersRequest {
+  string project_token = 1;
+}
+
+message ListProjectMembersResponse {
+  repeated ProjectMemberResponse members = 1;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 service AdminService {
@@ -116,4 +188,17 @@ service AdminService {
   rpc CreateApiKey(CreateApiKeyRequest)   returns (CreateApiKeyResponse);
   rpc RevokeApiKey(RevokeApiKeyRequest)   returns (Empty);
   rpc ListApiKeys(ListApiKeysRequest)     returns (ListApiKeysResponse);
+
+  // Project management — requires SuperAdmin or Admin capability
+  rpc CreateProject(CreateProjectRequest)   returns (ProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest)   returns (ProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest)   returns (Empty);
+  rpc GetProject(GetProjectRequest)         returns (ProjectResponse);
+  rpc ListProjects(ListProjectsRequest)     returns (ListProjectsResponse);
+
+  // Project member management — requires SuperAdmin or Admin capability
+  rpc AddProjectMember(AddProjectMemberRequest)       returns (ProjectMemberResponse);
+  rpc UpdateProjectMember(UpdateProjectMemberRequest) returns (ProjectMemberResponse);
+  rpc RemoveProjectMember(RemoveProjectMemberRequest) returns (Empty);
+  rpc ListProjectMembers(ListProjectMembersRequest)   returns (ListProjectMembersResponse);
 }

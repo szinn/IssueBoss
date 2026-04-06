@@ -5,13 +5,16 @@ use tonic::{Request, Response, Status};
 
 use crate::grpc::{
     admin_proto::{
-        CreateApiKeyRequest, CreateApiKeyResponse, CreateUserRequest, DeleteUserRequest, Empty, GetUserRequest, ListApiKeysRequest, ListApiKeysResponse,
-        ListUsersRequest, ListUsersResponse, RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, UpdateUserRequest, UserResponse,
+        AddProjectMemberRequest, CreateApiKeyRequest, CreateApiKeyResponse, CreateProjectRequest, CreateUserRequest, DeleteProjectRequest, DeleteUserRequest,
+        Empty, GetProjectRequest, GetUserRequest, ListApiKeysRequest, ListApiKeysResponse, ListProjectMembersRequest, ListProjectMembersResponse,
+        ListProjectsRequest, ListProjectsResponse, ListUsersRequest, ListUsersResponse, ProjectMemberResponse, ProjectResponse, RemoveProjectMemberRequest,
+        RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
         admin_service_server::AdminService,
     },
     error::map_core_error,
 };
 
+pub mod project;
 pub mod super_admin;
 pub mod user;
 
@@ -25,6 +28,28 @@ fn user_to_proto(user: ib_core::user::User) -> UserResponse {
         change_password_on_login: user.change_password_on_login,
         created_at: user.created_at.to_rfc3339(),
         updated_at: user.updated_at.to_rfc3339(),
+    }
+}
+
+fn project_to_proto(project: ib_core::project::Project) -> ProjectResponse {
+    ProjectResponse {
+        token: project.token.to_string(),
+        name: project.name,
+        slug: project.slug,
+        prefix: project.prefix,
+        created_at: project.created_at.to_rfc3339(),
+        updated_at: project.updated_at.to_rfc3339(),
+    }
+}
+
+fn project_member_to_proto(member: ib_core::project::ProjectMember, user: &ib_core::user::User) -> ProjectMemberResponse {
+    ProjectMemberResponse {
+        project_token: ib_core::project::ProjectToken::new(member.project_id).to_string(),
+        user_token: user.token.to_string(),
+        username: user.username.clone(),
+        capabilities: member.capabilities.0.iter().map(|c| format!("{c:?}")).collect(),
+        created_at: member.created_at.to_rfc3339(),
+        updated_at: member.updated_at.to_rfc3339(),
     }
 }
 
@@ -114,6 +139,87 @@ impl AdminService for GrpcAdminService {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
         user::handler::list_api_keys(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn create_project(&self, request: Request<CreateProjectRequest>) -> Result<Response<ProjectResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::create_project(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn update_project(&self, request: Request<UpdateProjectRequest>) -> Result<Response<ProjectResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::update_project(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn delete_project(&self, request: Request<DeleteProjectRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::delete_project(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn get_project(&self, request: Request<GetProjectRequest>) -> Result<Response<ProjectResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::get_project(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn list_projects(&self, request: Request<ListProjectsRequest>) -> Result<Response<ListProjectsResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::list_projects(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn add_project_member(&self, request: Request<AddProjectMemberRequest>) -> Result<Response<ProjectMemberResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::add_project_member(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn update_project_member(&self, request: Request<UpdateProjectMemberRequest>) -> Result<Response<ProjectMemberResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::update_project_member(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn remove_project_member(&self, request: Request<RemoveProjectMemberRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::remove_project_member(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn list_project_members(&self, request: Request<ListProjectMembersRequest>) -> Result<Response<ListProjectMembersResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        project::handler::list_project_members(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
