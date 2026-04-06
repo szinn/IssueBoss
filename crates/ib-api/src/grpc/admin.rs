@@ -43,6 +43,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn create_user(&self, request: Request<CreateUserRequest>) -> Result<Response<UserResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::create_user(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -50,6 +52,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn get_user(&self, request: Request<GetUserRequest>) -> Result<Response<UserResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::get_user(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -57,6 +61,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn list_users(&self, request: Request<ListUsersRequest>) -> Result<Response<ListUsersResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::list_users(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -64,6 +70,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn update_user(&self, request: Request<UpdateUserRequest>) -> Result<Response<UserResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::update_user(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -71,6 +79,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn delete_user(&self, request: Request<DeleteUserRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::delete_user(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -78,6 +88,8 @@ impl AdminService for GrpcAdminService {
     }
 
     async fn rotate_api_key(&self, request: Request<RotateApiKeyRequest>) -> Result<Response<ApiKeyResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
         handler::rotate_api_key(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
@@ -311,19 +323,26 @@ pub mod api {
 mod tests {
     use std::sync::Arc;
 
-    use ib_core::{create_services, user::MockUserRepository};
+    use ib_core::{CoreServices, create_services, user::MockUserRepository};
     use tonic::{Code, Request};
 
-    use super::GrpcAdminService;
-    use crate::grpc::admin_proto::{
-        CreateUserRequest, DeleteUserRequest, GetUserRequest, ListUsersRequest, RotateApiKeyRequest, SuperAdminRequest, UpdateUserRequest,
-        admin_service_server::AdminService,
+    use super::{GrpcAdminService, handler};
+    use crate::grpc::{
+        admin_proto::{
+            CreateUserRequest, DeleteUserRequest, GetUserRequest, ListUsersRequest, RotateApiKeyRequest, SuperAdminRequest, UpdateUserRequest,
+            admin_service_server::AdminService,
+        },
+        error::map_core_error,
     };
 
-    fn make_service_with_repo(repo: MockUserRepository) -> GrpcAdminService {
+    fn make_core_services(repo: MockUserRepository) -> Arc<CoreServices> {
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = Arc::new(default_repository_service_builder().user_repository(Arc::new(repo)).build().unwrap());
-        GrpcAdminService::new(create_services(repo_svc))
+        create_services(repo_svc)
+    }
+
+    fn make_service_with_repo(repo: MockUserRepository) -> GrpcAdminService {
+        GrpcAdminService::new(make_core_services(repo))
     }
 
     fn fake_user_for_test(id: u64, username: &str) -> ib_core::user::User {
@@ -346,6 +365,8 @@ mod tests {
             updated_at: Utc::now(),
         }
     }
+
+    // ── super_admin — exempt from auth, tested via AdminService ──────────────
 
     #[tokio::test]
     async fn super_admin_succeeds_when_no_existing_super_admin() {
@@ -433,6 +454,8 @@ mod tests {
         assert_eq!(err.code(), Code::AlreadyExists);
     }
 
+    // ── CRUD handlers — tested directly (auth is tested separately in auth.rs) ─
+
     #[tokio::test]
     async fn create_user_success() {
         let mut repo = MockUserRepository::new();
@@ -441,14 +464,18 @@ mod tests {
             let u = user.clone();
             Box::pin(async move { Ok(u) })
         });
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(CreateUserRequest {
-            username: "alice".into(),
-            full_name: "Alice".into(),
-            email: "alice@example.com".into(),
-            password: "pass".into(),
-        });
-        let resp = svc.create_user(req).await.unwrap().into_inner();
+        let svc = make_core_services(repo);
+        let resp = handler::create_user(
+            &svc,
+            CreateUserRequest {
+                username: "alice".into(),
+                full_name: "Alice".into(),
+                email: "alice@example.com".into(),
+                password: "pass".into(),
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.username, "alice");
     }
 
@@ -456,9 +483,11 @@ mod tests {
     async fn get_user_not_found_returns_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_username().returning(|_, _| Box::pin(async { Ok(None) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(GetUserRequest { username: "ghost".into() });
-        let err = svc.get_user(req).await.unwrap_err();
+        let svc = make_core_services(repo);
+        let err = handler::get_user(&svc, GetUserRequest { username: "ghost".into() })
+            .await
+            .map_err(map_core_error)
+            .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
     }
 
@@ -466,9 +495,8 @@ mod tests {
     async fn list_users_returns_empty_list() {
         let mut repo = MockUserRepository::new();
         repo.expect_list().returning(|_| Box::pin(async { Ok(vec![]) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(ListUsersRequest {});
-        let resp = svc.list_users(req).await.unwrap().into_inner();
+        let svc = make_core_services(repo);
+        let resp = handler::list_users(&svc, ListUsersRequest {}).await.unwrap();
         assert!(resp.users.is_empty());
     }
 
@@ -476,9 +504,11 @@ mod tests {
     async fn delete_user_not_found_returns_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_username().returning(|_, _| Box::pin(async { Ok(None) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(DeleteUserRequest { username: "ghost".into() });
-        let err = svc.delete_user(req).await.unwrap_err();
+        let svc = make_core_services(repo);
+        let err = handler::delete_user(&svc, DeleteUserRequest { username: "ghost".into() })
+            .await
+            .map_err(map_core_error)
+            .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
     }
 
@@ -491,9 +521,8 @@ mod tests {
             Box::pin(async move { Ok(Some(u)) })
         });
         repo.expect_update().returning(|_, u| Box::pin(async move { Ok(u) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(RotateApiKeyRequest { username: "alice".into() });
-        let resp = svc.rotate_api_key(req).await.unwrap().into_inner();
+        let svc = make_core_services(repo);
+        let resp = handler::rotate_api_key(&svc, RotateApiKeyRequest { username: "alice".into() }).await.unwrap();
         assert!(resp.api_key.starts_with("ib_live_"));
     }
 
@@ -506,13 +535,17 @@ mod tests {
             Box::pin(async move { Ok(Some(u)) })
         });
         repo.expect_update().returning(|_, u| Box::pin(async move { Ok(u) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(UpdateUserRequest {
-            username: "alice".into(),
-            full_name: Some("Alice Updated".into()),
-            email: None,
-        });
-        let resp = svc.update_user(req).await.unwrap().into_inner();
+        let svc = make_core_services(repo);
+        let resp = handler::update_user(
+            &svc,
+            UpdateUserRequest {
+                username: "alice".into(),
+                full_name: Some("Alice Updated".into()),
+                email: None,
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.username, "alice");
     }
 
@@ -520,13 +553,18 @@ mod tests {
     async fn update_user_not_found_returns_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_username().returning(|_, _| Box::pin(async { Ok(None) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(UpdateUserRequest {
-            username: "ghost".into(),
-            full_name: Some("Ghost".into()),
-            email: None,
-        });
-        let err = svc.update_user(req).await.unwrap_err();
+        let svc = make_core_services(repo);
+        let err = handler::update_user(
+            &svc,
+            UpdateUserRequest {
+                username: "ghost".into(),
+                full_name: Some("Ghost".into()),
+                email: None,
+            },
+        )
+        .await
+        .map_err(map_core_error)
+        .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
     }
 
@@ -534,9 +572,11 @@ mod tests {
     async fn rotate_api_key_not_found_returns_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_username().returning(|_, _| Box::pin(async { Ok(None) }));
-        let svc = make_service_with_repo(repo);
-        let req = Request::new(RotateApiKeyRequest { username: "ghost".into() });
-        let err = svc.rotate_api_key(req).await.unwrap_err();
+        let svc = make_core_services(repo);
+        let err = handler::rotate_api_key(&svc, RotateApiKeyRequest { username: "ghost".into() })
+            .await
+            .map_err(map_core_error)
+            .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
     }
 }

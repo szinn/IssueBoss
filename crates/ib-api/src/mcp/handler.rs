@@ -1,4 +1,7 @@
+use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
+
+use crate::auth::AuthenticatedUser;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSummary {
@@ -20,6 +23,12 @@ impl McpServer {
             prefix: "IB".to_owned(),
         }]
     }
+}
+
+/// Handler function — extracted user is injected by the auth middleware.
+/// Returns dummy data for M2; real implementation comes in M3.
+pub async fn list_projects_handler(Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>) -> Json<Vec<ProjectSummary>> {
+    Json(McpServer::dummy_projects())
 }
 
 #[cfg(test)]

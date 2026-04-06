@@ -32,7 +32,7 @@ impl IntoSubsystem<Error> for McpSubsystem {
             () = subsys.on_shutdown_requested() => {
                 tracing::info!("McpSubsystem shutting down...");
             }
-            result = axum::serve(listener, create_mcp_router()) => {
+            result = axum::serve(listener, create_mcp_router(self.core_services.clone())) => {
                 result.map_err(|e| Error::from(ApiError::Network(e.to_string())))?;
                 subsys.request_shutdown();
             }
