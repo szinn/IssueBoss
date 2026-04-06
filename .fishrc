@@ -1,0 +1,4 @@
+# function: ib
+function ib
+    cargo run -- $argv
+end
