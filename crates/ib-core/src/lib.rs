@@ -10,6 +10,7 @@ pub use error::{Error, ErrorKind, RepositoryError};
 
 use crate::{
     api_key::{ApiKeyService, service::ApiKeyServiceImpl},
+    project::{ProjectService, service::ProjectServiceImpl},
     repository::RepositoryService,
     user::{UserService, service::UserServiceImpl},
 };
@@ -17,13 +18,19 @@ use crate::{
 pub struct CoreServices {
     user_service: Arc<dyn UserService>,
     api_key_service: Arc<dyn ApiKeyService>,
+    project_service: Arc<dyn ProjectService>,
 }
 
 impl CoreServices {
     pub(crate) fn new(repository_service: Arc<RepositoryService>) -> Self {
         let user_service = Arc::new(UserServiceImpl::new(repository_service.clone()));
         let api_key_service = Arc::new(ApiKeyServiceImpl::new(repository_service.clone()));
-        Self { user_service, api_key_service }
+        let project_service = Arc::new(ProjectServiceImpl::new(repository_service.clone()));
+        Self {
+            user_service,
+            api_key_service,
+            project_service,
+        }
     }
 
     #[must_use]
@@ -34,6 +41,11 @@ impl CoreServices {
     #[must_use]
     pub fn api_key_service(&self) -> &Arc<dyn ApiKeyService> {
         &self.api_key_service
+    }
+
+    #[must_use]
+    pub fn project_service(&self) -> &Arc<dyn ProjectService> {
+        &self.project_service
     }
 }
 
