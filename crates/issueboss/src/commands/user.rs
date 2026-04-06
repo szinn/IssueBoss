@@ -20,12 +20,6 @@ pub(crate) enum UserCommands {
     Update(UpdateArgs),
     #[command(about = "Delete a user")]
     Delete(DeleteArgs),
-    #[command(about = "Create an API key for a user", name = "create-api-key")]
-    CreateApiKey(CreateApiKeyArgs),
-    #[command(about = "Revoke an API key by its token", name = "revoke-api-key")]
-    RevokeApiKey(RevokeApiKeyArgs),
-    #[command(about = "List all API keys for a user", name = "list-api-keys")]
-    ListApiKeys(ListApiKeysArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -62,29 +56,6 @@ pub(crate) struct DeleteArgs {
     pub username: String,
 }
 
-#[derive(Debug, clap::Args)]
-pub(crate) struct CreateApiKeyArgs {
-    #[arg(long)]
-    pub username: String,
-    #[arg(long, default_value = "ib_live")]
-    pub key_type: String,
-    #[arg(long, default_value = "")]
-    pub name: String,
-}
-
-#[derive(Debug, clap::Args)]
-pub(crate) struct RevokeApiKeyArgs {
-    /// The numeric ID returned when the key was created.
-    #[arg(long)]
-    pub api_key_id: u64,
-}
-
-#[derive(Debug, clap::Args)]
-pub(crate) struct ListApiKeysArgs {
-    #[arg(long)]
-    pub username: String,
-}
-
 // ── Dispatcher ───────────────────────────────────────────────────────────────
 
 pub(crate) async fn cmd_user(host: &str, port: u16, args: UserArgs) -> anyhow::Result<()> {
@@ -94,9 +65,6 @@ pub(crate) async fn cmd_user(host: &str, port: u16, args: UserArgs) -> anyhow::R
         UserCommands::Get(a) => cmd_get(host, port, a).await,
         UserCommands::Update(a) => cmd_update(host, port, a).await,
         UserCommands::Delete(a) => cmd_delete(host, port, a).await,
-        UserCommands::CreateApiKey(a) => cmd_create_api_key(host, port, a).await,
-        UserCommands::RevokeApiKey(a) => cmd_revoke_api_key(host, port, a).await,
-        UserCommands::ListApiKeys(a) => cmd_list_api_keys(host, port, a).await,
     }
 }
 
@@ -144,42 +112,6 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
 async fn cmd_delete(host: &str, port: u16, args: DeleteArgs) -> anyhow::Result<()> {
     user::api::delete_user(host, port, &args.username).await.map_err(|e| anyhow::anyhow!("{e}"))?;
     println!("Deleted user: {}", args.username);
-    Ok(())
-}
-
-async fn cmd_create_api_key(host: &str, port: u16, args: CreateApiKeyArgs) -> anyhow::Result<()> {
-    let resp = user::api::create_api_key(host, port, &args.username, &args.key_type, &args.name)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("\nAPI key created for: {}", resp.username);
-    println!("  Type:    {}", resp.key_type);
-    println!("  Prefix:  {}", resp.key_prefix);
-    println!("  ID:      {}", resp.api_key_id);
-    println!("  API key: {}", resp.api_key);
-    println!("\nStore this key securely — it will not be shown again.");
-    Ok(())
-}
-
-async fn cmd_revoke_api_key(host: &str, port: u16, args: RevokeApiKeyArgs) -> anyhow::Result<()> {
-    user::api::revoke_api_key(host, port, args.api_key_id)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("Revoked API key: {}", args.api_key_id);
-    Ok(())
-}
-
-async fn cmd_list_api_keys(host: &str, port: u16, args: ListApiKeysArgs) -> anyhow::Result<()> {
-    let resp = user::api::list_api_keys(host, port, &args.username).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    if resp.keys.is_empty() {
-        println!("No API keys for {}.", args.username);
-        return Ok(());
-    }
-    println!("{:<20} {:<12} {:<20} {:<25} LAST USED", "ID", "TYPE", "PREFIX", "NAME");
-    println!("{}", "-".repeat(100));
-    for k in resp.keys {
-        let last = if k.last_used_at.is_empty() { "-".to_owned() } else { k.last_used_at };
-        println!("{:<20} {:<12} {:<20} {:<25} {}", k.api_key_id, k.key_type, k.key_prefix, k.name, last);
-    }
     Ok(())
 }
 

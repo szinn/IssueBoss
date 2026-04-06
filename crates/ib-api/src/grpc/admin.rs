@@ -14,6 +14,7 @@ use crate::grpc::{
     error::map_core_error,
 };
 
+pub mod api_key;
 pub mod project;
 pub mod super_admin;
 pub mod user;
@@ -120,7 +121,7 @@ impl AdminService for GrpcAdminService {
     async fn create_api_key(&self, request: Request<CreateApiKeyRequest>) -> Result<Response<CreateApiKeyResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
-        user::handler::create_api_key(&self.core_services, request.into_inner())
+        api_key::handler::create_api_key(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -129,7 +130,7 @@ impl AdminService for GrpcAdminService {
     async fn revoke_api_key(&self, request: Request<RevokeApiKeyRequest>) -> Result<Response<Empty>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
-        user::handler::revoke_api_key(&self.core_services, request.into_inner())
+        api_key::handler::revoke_api_key(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -138,7 +139,7 @@ impl AdminService for GrpcAdminService {
     async fn list_api_keys(&self, request: Request<ListApiKeysRequest>) -> Result<Response<ListApiKeysResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
-        user::handler::list_api_keys(&self.core_services, request.into_inner())
+        api_key::handler::list_api_keys(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -259,7 +260,12 @@ pub mod api {
 mod tests {
     use std::sync::Arc;
 
-    use ib_core::{CoreServices, api_key::MockApiKeyRepository, create_services, user::MockUserRepository};
+    use ib_core::{
+        CoreServices,
+        api_key::{ApiKey, MockApiKeyRepository},
+        create_services,
+        user::MockUserRepository,
+    };
 
     use super::GrpcAdminService;
 
@@ -277,5 +283,36 @@ mod tests {
 
     pub(crate) fn make_service_with_repos(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> GrpcAdminService {
         GrpcAdminService::new(make_core_services(user_repo, api_key_repo))
+    }
+
+    pub(crate) fn fake_user(id: u64, username: &str) -> ib_core::user::User {
+        use chrono::Utc;
+        ib_core::user::User {
+            id,
+            token: ib_core::user::UserToken::new(id),
+            username: username.to_owned(),
+            full_name: format!("Test {username}"),
+            password_hash: "hash".to_owned(),
+            email_address: format!("{username}@example.com"),
+            capabilities: ib_core::user::Capabilities::default(),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    pub(crate) fn fake_api_key(id: u64, user_id: u64) -> ApiKey {
+        use chrono::Utc;
+        ApiKey {
+            id,
+            user_id,
+            key_type: "ib_live".to_owned(),
+            key_hash: "hash".to_owned(),
+            key_prefix: "ib_live_XXXX".to_owned(),
+            name: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+        }
     }
 }

@@ -1,3 +1,4 @@
+pub(crate) mod api_key;
 pub(crate) mod project;
 pub(crate) mod server;
 pub(crate) mod super_admin;
@@ -47,4 +48,7 @@ pub(crate) enum Commands {
 
     #[command(about = "Manage projects", display_order = 40)]
     Project(project::ProjectArgs),
+
+    #[command(about = "Manage API keys", display_order = 50, name = "api-key")]
+    ApiKey(api_key::ApiKeyArgs),
 }

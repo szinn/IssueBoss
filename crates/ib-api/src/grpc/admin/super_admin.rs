@@ -74,52 +74,18 @@ pub mod api {
 
 #[cfg(test)]
 mod tests {
-    use ib_core::{
-        api_key::{ApiKey, MockApiKeyRepository},
-        user::{Capabilities, Capability, MockUserRepository, User, UserToken},
-    };
+    use ib_core::{api_key::MockApiKeyRepository, user::MockUserRepository};
     use tonic::{Code, Request};
 
     use crate::grpc::{
-        admin::tests::make_service_with_repos,
+        admin::tests::{fake_api_key, fake_user, make_service_with_repos},
         admin_proto::{SuperAdminRequest, admin_service_server::AdminService},
     };
 
-    fn fake_user(id: u64) -> User {
-        use chrono::Utc;
-        User {
-            id,
-            token: UserToken::new(id),
-            username: "admin".to_owned(),
-            full_name: "Admin".to_owned(),
-            password_hash: "hash".to_owned(),
-            email_address: "admin@example.com".to_owned(),
-            capabilities: Capabilities(vec![Capability::SuperAdmin]),
-            change_password_on_login: false,
-            version: 0,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
-    fn fake_key(id: u64, user_id: u64) -> ApiKey {
-        use chrono::Utc;
-        ApiKey {
-            id,
-            user_id,
-            key_type: "ib_live".to_owned(),
-            key_hash: "hash".to_owned(),
-            key_prefix: "ib_live_XXXX".to_owned(),
-            name: Some("default".to_owned()),
-            created_at: Utc::now(),
-            last_used_at: None,
-        }
-    }
-
     #[tokio::test]
     async fn super_admin_succeeds_when_no_existing_super_admin() {
-        let user = fake_user(1);
-        let key = fake_key(10, 1);
+        let user = fake_user(1, "alice");
+        let key = fake_api_key(10, 1);
         let mut user_repo = MockUserRepository::new();
         let mut api_key_repo = MockApiKeyRepository::new();
 
