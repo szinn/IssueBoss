@@ -65,6 +65,16 @@ impl IssueRepository for IssueRepositoryAdapter {
         Ok(prelude::Issues::find_by_id(id as i64).one(db).await.map_err(handle_dberr)?.map(Into::into))
     }
 
+    async fn find_by_slug(&self, transaction: &dyn Transaction, slug: &str) -> Result<Option<Issue>, Error> {
+        let db = TransactionImpl::get_db_transaction(transaction)?;
+        Ok(prelude::Issues::find()
+            .filter(issues::Column::Slug.eq(slug))
+            .one(db)
+            .await
+            .map_err(handle_dberr)?
+            .map(Into::into))
+    }
+
     async fn update(&self, transaction: &dyn Transaction, issue: Issue) -> Result<Issue, Error> {
         if issue.id == 0 {
             return Err(Error::InvalidId(issue.id));
@@ -162,13 +172,41 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::High,
             size: None,
-            slug: format!("MA-{number}-fix-login"),
+            slug: format!("MA-{number}"),
         };
         let created = svc.issue_repository().create(&*tx, record).await.unwrap();
         let found = svc.issue_repository().find_by_id(&*tx, created.id).await.unwrap().unwrap();
         assert_eq!(found.title, "Fix login");
         assert_eq!(found.number, 1);
         assert_eq!(found.project_id, project.id);
+    }
+
+    #[tokio::test]
+    async fn find_by_slug_returns_issue() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("slugtest", "slugtest", "ST", None::<String>).unwrap())
+            .await
+            .unwrap();
+        let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let record = NewIssueRecord {
+            project_id: project.id,
+            number,
+            title: "Slug test".into(),
+            description: "".into(),
+            status: IssueStatus::Triage,
+            priority: IssuePriority::Medium,
+            size: None,
+            slug: format!("ST-{number}"),
+        };
+        svc.issue_repository().create(&*tx, record).await.unwrap();
+        let found = svc.issue_repository().find_by_slug(&*tx, "ST-1").await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().slug, "ST-1");
+        let missing = svc.issue_repository().find_by_slug(&*tx, "ST-999").await.unwrap();
+        assert!(missing.is_none());
     }
 
     #[tokio::test]
@@ -191,7 +229,7 @@ mod tests {
                 status: IssueStatus::Triage,
                 priority,
                 size: None,
-                slug: format!("PR-{number}-{}", title.to_lowercase()),
+                slug: format!("PR-{number}"),
             };
             svc.issue_repository().create(&*tx, record).await.unwrap();
         }
@@ -220,7 +258,7 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::Medium,
             size: None,
-            slug: "UP-1-old-title".into(),
+            slug: "UP-1".into(),
         };
         let created = svc.issue_repository().create(&*tx, record).await.unwrap();
         let v0 = created.version;
@@ -249,7 +287,7 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::Medium,
             size: None,
-            slug: "CF-1-issue".into(),
+            slug: "CF-1".into(),
         };
         let mut issue = svc.issue_repository().create(&*tx, record).await.unwrap();
         issue.version = 99;
@@ -294,7 +332,7 @@ mod tests {
                 status: status.clone(),
                 priority: IssuePriority::Medium,
                 size: None,
-                slug: format!("FL-{number}-{}", status.to_string().to_lowercase()),
+                slug: format!("FL-{number}"),
             };
             svc.issue_repository().create(&*tx, record).await.unwrap();
         }

@@ -197,7 +197,7 @@ message CreateIssueRequest {
 }
 
 message UpdateIssueRequest {
-  string          token       = 1;   // issue token
+  string          slug        = 1;   // issue slug, e.g. "IB-1"
   optional string title       = 2;
   optional string description = 3;
   optional string status      = 4;
@@ -206,7 +206,7 @@ message UpdateIssueRequest {
 }
 
 message GetIssueRequest {
-  string token = 1;
+  string slug = 1;   // issue slug, e.g. "IB-1"
 }
 
 message ListIssuesRequest {

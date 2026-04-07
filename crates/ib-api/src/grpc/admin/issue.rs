@@ -3,7 +3,7 @@ pub(crate) mod handler {
 
     use ib_core::{
         CoreServices, Error, RepositoryError,
-        issue::{IssueFilter, IssueToken, NewIssue},
+        issue::{IssueFilter, NewIssue},
     };
 
     use crate::grpc::{
@@ -31,10 +31,9 @@ pub(crate) mod handler {
     }
 
     pub(crate) async fn update_issue(core: &Arc<CoreServices>, req: UpdateIssueRequest) -> Result<IssueResponse, Error> {
-        let token: IssueToken = IssueToken::parse(&req.token).map_err(|_| Error::Validation(format!("invalid issue token: {}", req.token)))?;
         let mut issue = core
             .issue_service()
-            .find_by_token(token)
+            .find_by_slug(&req.slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let project_slug = core
@@ -63,10 +62,9 @@ pub(crate) mod handler {
     }
 
     pub(crate) async fn get_issue(core: &Arc<CoreServices>, req: GetIssueRequest) -> Result<IssueResponse, Error> {
-        let token: IssueToken = IssueToken::parse(&req.token).map_err(|_| Error::Validation(format!("invalid issue token: {}", req.token)))?;
         let issue = core
             .issue_service()
-            .find_by_token(token)
+            .find_by_slug(&req.slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         let project_slug = core
@@ -144,9 +142,9 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
-    pub async fn get_issue(host: &str, port: u16, token: &str) -> Result<IssueResponse, Error> {
+    pub async fn get_issue(host: &str, port: u16, slug: &str) -> Result<IssueResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
-        let req = with_api_key(tonic::Request::new(GetIssueRequest { token: token.to_owned() }));
+        let req = with_api_key(tonic::Request::new(GetIssueRequest { slug: slug.to_owned() }));
         client
             .get_issue(req)
             .await
@@ -157,7 +155,7 @@ pub mod api {
     pub async fn update_issue(
         host: &str,
         port: u16,
-        token: &str,
+        slug: &str,
         title: Option<&str>,
         description: Option<&str>,
         status: Option<&str>,
@@ -166,7 +164,7 @@ pub mod api {
     ) -> Result<IssueResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(UpdateIssueRequest {
-            token: token.to_owned(),
+            slug: slug.to_owned(),
             title: title.map(str::to_owned),
             description: description.map(str::to_owned),
             status: status.map(str::to_owned),
@@ -249,7 +247,7 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::Medium,
             size: None,
-            slug: format!("TP-{number}-issue-{number}"),
+            slug: format!("TP-{number}"),
             version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -314,7 +312,7 @@ mod tests {
     #[tokio::test]
     async fn get_issue_not_found_returns_not_found() {
         let mut issue_repo = MockIssueRepository::new();
-        issue_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
@@ -325,8 +323,10 @@ mod tests {
                 .unwrap(),
         );
         let core = ib_core::create_services(repo_svc);
-        let token = IssueToken::new(999).to_string();
-        let err = handler::get_issue(&core, GetIssueRequest { token }).await.map_err(map_core_error).unwrap_err();
+        let err = handler::get_issue(&core, GetIssueRequest { slug: "TP-999".into() })
+            .await
+            .map_err(map_core_error)
+            .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
     }
 

@@ -7,7 +7,7 @@ use axum::{
 };
 use ib_core::{
     CoreServices,
-    issue::{IssueFilter, IssuePriority, IssueSize, IssueToken, NewIssue},
+    issue::{IssueFilter, IssuePriority, IssueSize, NewIssue},
     project::ProjectToken,
 };
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,6 @@ pub struct IssueSummary {
     pub token: String,
     pub project_token: String,
     pub number: u32,
-    pub reference: String,
     pub title: String,
     pub description: String,
     pub status: String,
@@ -68,7 +67,6 @@ impl IssueSummary {
             token: issue.token.to_string(),
             project_token: project.token.to_string(),
             number: issue.number,
-            reference: issue.reference(&project.prefix),
             title: issue.title,
             description: issue.description,
             status: issue.status.to_string(),
@@ -142,12 +140,11 @@ pub async fn create_issue_handler(
 pub async fn get_issue_handler(
     State(core): State<Arc<CoreServices>>,
     Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
-    Path(token): Path<String>,
+    Path(slug): Path<String>,
 ) -> Result<Json<IssueSummary>, StatusCode> {
-    let issue_token = IssueToken::parse(&token).map_err(|_| StatusCode::BAD_REQUEST)?;
     let issue = core
         .issue_service()
-        .find_by_token(issue_token)
+        .find_by_slug(&slug)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -163,13 +160,12 @@ pub async fn get_issue_handler(
 pub async fn update_issue_handler(
     State(core): State<Arc<CoreServices>>,
     Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
-    Path(token): Path<String>,
+    Path(slug): Path<String>,
     Json(body): Json<UpdateIssueBody>,
 ) -> Result<Json<IssueSummary>, StatusCode> {
-    let issue_token = IssueToken::parse(&token).map_err(|_| StatusCode::BAD_REQUEST)?;
     let mut issue = core
         .issue_service()
-        .find_by_token(issue_token)
+        .find_by_slug(&slug)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -279,7 +275,7 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::Medium,
             size: None,
-            slug: format!("TP-{number}-issue-{number}"),
+            slug: format!("TP-{number}"),
             version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -375,12 +371,11 @@ mod tests {
         assert!(summary.token.starts_with("I_"));
         assert!(summary.project_token.starts_with("P_"));
         assert_eq!(summary.number, 3);
-        assert_eq!(summary.reference, "TP-3");
         assert_eq!(summary.title, "Issue 3");
         assert_eq!(summary.status, "Triage");
         assert_eq!(summary.priority, "Medium");
         assert!(summary.size.is_none());
-        assert_eq!(summary.slug, "TP-3-issue-3");
+        assert_eq!(summary.slug, "TP-3");
     }
 
     #[tokio::test]

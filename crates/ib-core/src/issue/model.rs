@@ -148,13 +148,6 @@ pub struct Issue {
     pub updated_at: DateTime<Utc>,
 }
 
-impl Issue {
-    /// Human-readable reference, e.g. "BB-42".
-    pub fn reference(&self, prefix: &str) -> String {
-        format!("{}-{}", prefix, self.number)
-    }
-}
-
 /// What callers pass to `IssueService::create_issue`.
 /// The handler resolves the project token → id and prefix before calling the
 /// service.
@@ -216,11 +209,10 @@ pub struct IssueFilter {
 }
 
 /// Derives the immutable slug for an issue at creation time.
-/// Format: `"{prefix}-{number}-{title_slug}"`, e.g.
-/// `"BB-42-add-rate-limiting"`.
-pub fn derive_issue_slug(prefix: &str, number: u32, title: &str) -> String {
-    let title_slug = ib_utils::slugify(title);
-    format!("{}-{}-{}", prefix, number, title_slug)
+/// Format: `"{prefix}-{number}"`, e.g. `"IB-42"`.
+/// This is also the canonical user-facing reference for the issue.
+pub fn derive_issue_slug(prefix: &str, number: u32) -> String {
+    format!("{}-{}", prefix, number)
 }
 
 #[cfg(test)]
@@ -251,8 +243,8 @@ mod tests {
 
     #[test]
     fn derive_issue_slug_produces_expected_output() {
-        assert_eq!(derive_issue_slug("BB", 42, "Add Rate Limiting"), "BB-42-add-rate-limiting");
-        assert_eq!(derive_issue_slug("IB", 1, "Fix login timeout"), "IB-1-fix-login-timeout");
+        assert_eq!(derive_issue_slug("BB", 42), "BB-42");
+        assert_eq!(derive_issue_slug("IB", 1), "IB-1");
     }
 
     #[test]
@@ -298,7 +290,9 @@ mod tests {
     }
 
     #[test]
-    fn issue_reference_formats_correctly() {
+    fn slug_is_the_issue_reference() {
+        assert_eq!(derive_issue_slug("BB", 42), "BB-42");
+        // slug on Issue struct is the canonical user-facing reference
         let issue = Issue {
             id: 1,
             token: IssueToken::new(1),
@@ -309,11 +303,11 @@ mod tests {
             status: IssueStatus::Triage,
             priority: IssuePriority::Medium,
             size: None,
-            slug: "BB-42-t".into(),
+            slug: "BB-42".into(),
             version: 0,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
-        assert_eq!(issue.reference("BB"), "BB-42");
+        assert_eq!(issue.slug, "BB-42");
     }
 }

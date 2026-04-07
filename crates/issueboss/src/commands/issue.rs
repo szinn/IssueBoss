@@ -54,14 +54,14 @@ pub(crate) struct ListArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct GetArgs {
-    /// Issue token (I_xxx)
+    /// Issue slug (e.g. IB-1)
     #[arg(long)]
     pub issue: String,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UpdateArgs {
-    /// Issue token (I_xxx)
+    /// Issue slug (e.g. IB-1)
     #[arg(long)]
     pub issue: String,
     #[arg(long)]
@@ -124,7 +124,7 @@ async fn cmd_list(host: &str, port: u16, args: ListArgs) -> anyhow::Result<()> {
     for i in resp.issues {
         println!(
             "{:<10} {:<12} {:<10} {:<8} {}",
-            slug_to_reference(&i.slug),
+            i.slug,
             i.status,
             i.priority,
             i.size.as_deref().unwrap_or("-"),
@@ -163,25 +163,13 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
 // ── Output helpers
 // ────────────────────────────────────────────────────────────
 
-/// Derives the short issue reference (e.g. "TP-1") from a slug like
-/// "TP-1-fix-login".
-fn slug_to_reference(slug: &str) -> String {
-    let parts: Vec<&str> = slug.splitn(3, '-').collect();
-    if parts.len() >= 2 {
-        format!("{}-{}", parts[0], parts[1])
-    } else {
-        slug.to_owned()
-    }
-}
-
 fn print_issue(i: &IssueResponse) {
-    println!("Reference:   {}", slug_to_reference(&i.slug));
+    println!("Reference:   {}", i.slug);
     println!("Token:       {}", i.token);
     println!("Title:       {}", i.title);
     println!("Status:      {}", i.status);
     println!("Priority:    {}", i.priority);
     println!("Size:        {}", i.size.as_deref().unwrap_or("-"));
-    println!("Slug:        {}", i.slug);
     if !i.description.is_empty() {
         println!("Description: {}", i.description);
     }

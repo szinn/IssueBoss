@@ -9,6 +9,7 @@ pub trait IssueService: Send + Sync {
     async fn update_issue(&self, issue: Issue) -> Result<Issue, Error>;
     async fn find_by_id(&self, id: IssueId) -> Result<Option<Issue>, Error>;
     async fn find_by_token(&self, token: IssueToken) -> Result<Option<Issue>, Error>;
+    async fn find_by_slug(&self, slug: &str) -> Result<Option<Issue>, Error>;
     async fn list_issues(&self, project_id: crate::project::ProjectId, filter: IssueFilter) -> Result<Vec<Issue>, Error>;
 }
 
@@ -32,7 +33,7 @@ impl IssueService for IssueServiceImpl {
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
             let number = project_repository.increment_issue_counter(tx, new_issue.project_id).await?;
-            let slug = derive_issue_slug(&new_issue.project_prefix, number, &new_issue.title);
+            let slug = derive_issue_slug(&new_issue.project_prefix, number);
             issue_repository
                 .create(
                     tx,
@@ -61,6 +62,11 @@ impl IssueService for IssueServiceImpl {
 
     async fn find_by_token(&self, token: IssueToken) -> Result<Option<Issue>, Error> {
         with_read_only_transaction!(self, issue_repository, |tx| issue_repository.find_by_id(tx, token.id()).await)
+    }
+
+    async fn find_by_slug(&self, slug: &str) -> Result<Option<Issue>, Error> {
+        let slug = slug.to_owned();
+        with_read_only_transaction!(self, issue_repository, |tx| issue_repository.find_by_slug(tx, &slug).await)
     }
 
     async fn list_issues(&self, project_id: crate::project::ProjectId, filter: IssueFilter) -> Result<Vec<Issue>, Error> {
