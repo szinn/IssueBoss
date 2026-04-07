@@ -127,8 +127,18 @@ impl ProjectRepository for ProjectRepositoryAdapter {
             .await
             .map_err(handle_dberr)?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-        let mut updater: projects::ActiveModel = existing.into();
+
+        if existing.version != project.version as i64 {
+            return Err(Error::RepositoryError(RepositoryError::Conflict));
+        }
+
+        let mut updater: projects::ActiveModel = existing.clone().into();
+        // Always Set so that before_save sees is_changed() == true and increments
+        // version. Do not move this behind a diff guard.
         updater.name = Set(project.name);
+        if existing.description != project.description {
+            updater.description = Set(project.description);
+        }
         let result = updater.update(db).await.map_err(handle_dberr)?;
         Ok(result.into())
     }
@@ -143,6 +153,11 @@ impl ProjectRepository for ProjectRepositoryAdapter {
             .await
             .map_err(handle_dberr)?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+
+        if existing.version != project.version as i64 {
+            return Err(Error::RepositoryError(RepositoryError::Conflict));
+        }
+
         let result: Project = existing.clone().into();
         existing.delete(db).await.map_err(handle_dberr)?;
         Ok(result)
@@ -153,7 +168,7 @@ impl ProjectRepository for ProjectRepositoryAdapter {
 mod tests {
     use std::sync::Arc;
 
-    use ib_core::{project::NewProject, repository::RepositoryService};
+    use ib_core::{Error, RepositoryError, project::NewProject, repository::RepositoryService};
     use sea_orm::Database;
 
     use crate::create_repository_service;
@@ -243,5 +258,62 @@ mod tests {
         svc.project_repository().delete(&*tx, p.clone()).await.unwrap();
         let found = svc.project_repository().find_by_id(&*tx, p.id).await.unwrap();
         assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_increments_version() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let created = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("App", "app", "AP", None::<String>).unwrap())
+            .await
+            .unwrap();
+        let v0 = created.version;
+        let mut to_update = created;
+        to_update.name = "Updated App".to_owned();
+        let updated = svc.project_repository().update(&*tx, to_update).await.unwrap();
+        assert_eq!(updated.version, v0 + 1);
+    }
+
+    #[tokio::test]
+    async fn update_conflict_on_stale_version() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let mut project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("App", "app", "AP", None::<String>).unwrap())
+            .await
+            .unwrap();
+        project.version = 99;
+        let err = svc.project_repository().update(&*tx, project).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::Conflict)));
+    }
+
+    #[tokio::test]
+    async fn delete_conflict_on_stale_version() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let mut project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("App", "app", "AP", None::<String>).unwrap())
+            .await
+            .unwrap();
+        project.version = 99;
+        let err = svc.project_repository().delete(&*tx, project).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::Conflict)));
+    }
+
+    #[tokio::test]
+    async fn description_round_trips() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let created = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("App", "app", "AP", Some("My description")).unwrap())
+            .await
+            .unwrap();
+        let found = svc.project_repository().find_by_id(&*tx, created.id).await.unwrap().unwrap();
+        assert_eq!(found.description.as_deref(), Some("My description"));
     }
 }
