@@ -200,7 +200,7 @@ message UpdateIssueRequest {
   string          slug        = 1;   // issue slug, e.g. "IB-1"
   optional string title       = 2;
   optional string description = 3;
-  optional string status      = 4;
+  reserved 4;                        // was: status — use TransitionIssue instead
   optional string priority    = 5;
   optional string size        = 6;
 }
@@ -219,6 +219,11 @@ message ListIssuesRequest {
 
 message ListIssuesResponse {
   repeated IssueResponse issues = 1;
+}
+
+message TransitionIssueRequest {
+  string slug       = 1;   // issue slug, e.g. "IB-1"
+  string new_status = 2;   // IssueStatus as string, e.g. "InDev"
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -254,8 +259,9 @@ service AdminService {
   rpc ListProjectMembers(ListProjectMembersRequest)   returns (ListProjectMembersResponse);
 
   // Issue management — requires SuperAdmin or Admin capability
-  rpc CreateIssue(CreateIssueRequest) returns (IssueResponse);
-  rpc UpdateIssue(UpdateIssueRequest) returns (IssueResponse);
-  rpc GetIssue(GetIssueRequest)       returns (IssueResponse);
-  rpc ListIssues(ListIssuesRequest)   returns (ListIssuesResponse);
+  rpc CreateIssue(CreateIssueRequest)         returns (IssueResponse);
+  rpc UpdateIssue(UpdateIssueRequest)         returns (IssueResponse);
+  rpc GetIssue(GetIssueRequest)               returns (IssueResponse);
+  rpc ListIssues(ListIssuesRequest)           returns (ListIssuesResponse);
+  rpc TransitionIssue(TransitionIssueRequest) returns (IssueResponse);
 }

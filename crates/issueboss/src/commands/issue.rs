@@ -150,7 +150,6 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
         &args.issue,
         args.title.as_deref(),
         args.description.as_deref(),
-        None, // status transitions deferred to M3c
         args.priority.as_deref(),
         args.size.as_deref(),
     )

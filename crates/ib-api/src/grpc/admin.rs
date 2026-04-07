@@ -9,7 +9,7 @@ use crate::grpc::{
         DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest, IssueResponse, ListApiKeysRequest, ListApiKeysResponse,
         ListIssuesRequest, ListIssuesResponse, ListProjectMembersRequest, ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse,
         ListUsersRequest, ListUsersResponse, ProjectMemberResponse, ProjectResponse, RemoveProjectMemberRequest, RevokeApiKeyRequest, SuperAdminRequest,
-        SuperAdminResponse, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
+        SuperAdminResponse, TransitionIssueRequest, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
         admin_service_server::AdminService,
     },
     error::map_core_error,
@@ -276,6 +276,15 @@ impl AdminService for GrpcAdminService {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
         issue::handler::list_issues(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn transition_issue(&self, request: Request<TransitionIssueRequest>) -> Result<Response<IssueResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        issue::handler::transition_issue(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)

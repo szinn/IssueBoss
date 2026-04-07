@@ -8,7 +8,7 @@ pub(crate) mod handler {
 
     use crate::grpc::{
         admin::issue_to_proto,
-        admin_proto::{CreateIssueRequest, GetIssueRequest, IssueResponse, ListIssuesRequest, ListIssuesResponse, UpdateIssueRequest},
+        admin_proto::{CreateIssueRequest, GetIssueRequest, IssueResponse, ListIssuesRequest, ListIssuesResponse, TransitionIssueRequest, UpdateIssueRequest},
     };
 
     pub(crate) async fn create_issue(core: &Arc<CoreServices>, req: CreateIssueRequest) -> Result<IssueResponse, Error> {
@@ -48,9 +48,6 @@ pub(crate) mod handler {
         if let Some(description) = req.description {
             issue.description = description;
         }
-        if let Some(status) = req.status {
-            issue.status = status.parse().map_err(|_| Error::Validation(format!("unknown status: {status}")))?;
-        }
         if let Some(priority) = req.priority {
             issue.priority = priority.parse().map_err(|_| Error::Validation(format!("unknown priority: {priority}")))?;
         }
@@ -58,6 +55,26 @@ pub(crate) mod handler {
             issue.size = Some(size.parse().map_err(|_| Error::Validation(format!("unknown size: {size}")))?);
         }
         let updated = core.issue_service().update_issue(issue).await?;
+        Ok(issue_to_proto(updated, &project_slug))
+    }
+
+    pub(crate) async fn transition_issue(core: &Arc<CoreServices>, req: TransitionIssueRequest) -> Result<IssueResponse, Error> {
+        let new_status: ib_core::issue::IssueStatus = req
+            .new_status
+            .parse()
+            .map_err(|_| Error::Validation(format!("unknown status: {}", req.new_status)))?;
+        let issue = core
+            .issue_service()
+            .find_by_slug(&req.slug)
+            .await?
+            .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+        let project_slug = core
+            .project_service()
+            .find_by_id(issue.project_id)
+            .await?
+            .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
+            .slug;
+        let updated = core.issue_service().transition_issue(issue.token, new_status).await?;
         Ok(issue_to_proto(updated, &project_slug))
     }
 
@@ -112,7 +129,7 @@ pub mod api {
         grpc::{
             admin::api::{make_client, with_api_key},
             admin_proto::{
-                CreateIssueRequest, GetIssueRequest, IssueResponse, ListIssuesRequest, ListIssuesResponse, UpdateIssueRequest,
+                CreateIssueRequest, GetIssueRequest, IssueResponse, ListIssuesRequest, ListIssuesResponse, TransitionIssueRequest, UpdateIssueRequest,
                 admin_service_client::AdminServiceClient,
             },
         },
@@ -159,7 +176,6 @@ pub mod api {
         slug: &str,
         title: Option<&str>,
         description: Option<&str>,
-        status: Option<&str>,
         priority: Option<&str>,
         size: Option<&str>,
     ) -> Result<IssueResponse, Error> {
@@ -168,7 +184,6 @@ pub mod api {
             slug: slug.to_owned(),
             title: title.map(str::to_owned),
             description: description.map(str::to_owned),
-            status: status.map(str::to_owned),
             priority: priority.map(str::to_owned),
             size: size.map(str::to_owned),
         }));
@@ -198,6 +213,19 @@ pub mod api {
         }));
         client
             .list_issues(req)
+            .await
+            .map(|r| r.into_inner())
+            .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+    }
+
+    pub async fn transition_issue(host: &str, port: u16, slug: &str, new_status: &str) -> Result<IssueResponse, Error> {
+        let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
+        let req = with_api_key(tonic::Request::new(TransitionIssueRequest {
+            slug: slug.to_owned(),
+            new_status: new_status.to_owned(),
+        }));
+        client
+            .transition_issue(req)
             .await
             .map(|r| r.into_inner())
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
@@ -329,6 +357,156 @@ mod tests {
             .map_err(map_core_error)
             .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn transition_issue_success() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue_before = fake_issue(100, 1, 1); // status: Triage
+        let issue_after = {
+            let mut i = issue_before.clone();
+            i.status = IssueStatus::SpecNeeded;
+            i
+        };
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue_before.clone();
+            // find_by_slug called by handler
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue_before.clone();
+            // find_by_id called by transition_issue service (loads by token.id())
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue_after.clone();
+            issue_repo
+                .expect_update()
+                .withf(|_, issue| issue.status == IssueStatus::SpecNeeded)
+                .returning(move |_, _| {
+                    let i = i.clone();
+                    Box::pin(async move { Ok(i) })
+                });
+        }
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let resp = handler::transition_issue(
+            &core,
+            crate::grpc::admin_proto::TransitionIssueRequest {
+                slug: "MA-1".into(),
+                new_status: "SpecNeeded".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status, "SpecNeeded");
+    }
+
+    #[tokio::test]
+    async fn transition_issue_illegal_transition_returns_invalid_argument() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue = fake_issue(100, 1, 1); // status: Triage
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        // Triage → Done is an illegal skip
+        let err = handler::transition_issue(
+            &core,
+            crate::grpc::admin_proto::TransitionIssueRequest {
+                slug: "MA-1".into(),
+                new_status: "Done".into(),
+            },
+        )
+        .await
+        .map_err(crate::grpc::error::map_core_error)
+        .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn transition_issue_unknown_status_returns_invalid_argument() {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let err = handler::transition_issue(
+            &core,
+            crate::grpc::admin_proto::TransitionIssueRequest {
+                slug: "MA-1".into(),
+                new_status: "NotARealStatus".into(),
+            },
+        )
+        .await
+        .map_err(crate::grpc::error::map_core_error)
+        .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
     }
 
     #[tokio::test]
