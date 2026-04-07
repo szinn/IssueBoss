@@ -215,6 +215,62 @@ pub fn derive_issue_slug(prefix: &str, number: u32) -> String {
     format!("{}-{}", prefix, number)
 }
 
+impl IssueStatus {
+    /// Returns the position of this status in the pipeline sequence.
+    /// Backlog and Canceled are off-chain and return None.
+    fn pipeline_index(&self) -> Option<usize> {
+        match self {
+            Self::Triage => Some(0),
+            Self::SpecNeeded => Some(1),
+            Self::ResearchNeeded => Some(2),
+            Self::ResearchInProgress => Some(3),
+            Self::ResearchInReview => Some(4),
+            Self::ReadyForPlan => Some(5),
+            Self::PlanInProgress => Some(6),
+            Self::PlanInReview => Some(7),
+            Self::ReadyForDev => Some(8),
+            Self::InDev => Some(9),
+            Self::CodeReview => Some(10),
+            Self::Done => Some(11),
+            Self::Backlog | Self::Canceled => None,
+        }
+    }
+
+    /// Determines if this status can transition to the given `next` status.
+    ///
+    /// Rules:
+    /// - Self-transition (same state → same state) is never allowed
+    /// - Canceled is terminal (no outgoing transitions)
+    /// - Any non-Canceled state → Backlog or Canceled is always allowed
+    /// - From Backlog: any pipeline state is reachable (reactivation)
+    /// - In-pipeline: forward moves are adjacent-only (index + 1); backward
+    ///   moves are unrestricted (any earlier index)
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        // Self-transition is never valid
+        if self == next {
+            return false;
+        }
+        // Canceled is terminal
+        if matches!(self, Self::Canceled) {
+            return false;
+        }
+        // Any non-Canceled state can go to Backlog or Canceled
+        if matches!(next, Self::Backlog | Self::Canceled) {
+            return true;
+        }
+        // From Backlog: any pipeline state is reachable (next is not Backlog/Canceled
+        // here)
+        if matches!(self, Self::Backlog) {
+            return next.pipeline_index().is_some();
+        }
+        // Both in the pipeline: adjacent-forward or any-backward
+        match (self.pipeline_index(), next.pipeline_index()) {
+            (Some(from), Some(to)) => to == from + 1 || to < from,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +365,126 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
         assert_eq!(issue.slug, "BB-42");
+    }
+
+    #[test]
+    fn self_transition_is_always_denied() {
+        for s in [
+            IssueStatus::Triage,
+            IssueStatus::InDev,
+            IssueStatus::Done,
+            IssueStatus::Backlog,
+            IssueStatus::Canceled,
+        ] {
+            assert!(!s.can_transition_to(&s.clone()), "self-transition should be denied for {s:?}");
+        }
+    }
+
+    #[test]
+    fn canceled_is_terminal() {
+        for next in [
+            IssueStatus::Triage,
+            IssueStatus::SpecNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::ResearchInProgress,
+            IssueStatus::ResearchInReview,
+            IssueStatus::ReadyForPlan,
+            IssueStatus::PlanInProgress,
+            IssueStatus::PlanInReview,
+            IssueStatus::ReadyForDev,
+            IssueStatus::InDev,
+            IssueStatus::CodeReview,
+            IssueStatus::Done,
+            IssueStatus::Backlog,
+        ] {
+            assert!(!IssueStatus::Canceled.can_transition_to(&next), "Canceled → {next:?} should be denied");
+        }
+    }
+
+    #[test]
+    fn any_non_canceled_state_can_go_to_backlog() {
+        for s in [
+            IssueStatus::Triage,
+            IssueStatus::SpecNeeded,
+            IssueStatus::ResearchInProgress,
+            IssueStatus::InDev,
+            IssueStatus::Done,
+        ] {
+            assert!(s.can_transition_to(&IssueStatus::Backlog), "{s:?} → Backlog should be allowed");
+        }
+    }
+
+    #[test]
+    fn any_non_canceled_state_can_go_to_canceled() {
+        for s in [IssueStatus::Triage, IssueStatus::InDev, IssueStatus::Done, IssueStatus::Backlog] {
+            assert!(s.can_transition_to(&IssueStatus::Canceled), "{s:?} → Canceled should be allowed");
+        }
+    }
+
+    #[test]
+    fn backlog_can_go_to_any_pipeline_state() {
+        for next in [
+            IssueStatus::Triage,
+            IssueStatus::SpecNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::ResearchInProgress,
+            IssueStatus::ResearchInReview,
+            IssueStatus::ReadyForPlan,
+            IssueStatus::PlanInProgress,
+            IssueStatus::PlanInReview,
+            IssueStatus::ReadyForDev,
+            IssueStatus::InDev,
+            IssueStatus::CodeReview,
+            IssueStatus::Done,
+        ] {
+            assert!(IssueStatus::Backlog.can_transition_to(&next), "Backlog → {next:?} should be allowed");
+        }
+    }
+
+    #[test]
+    fn forward_adjacent_moves_are_allowed() {
+        let chain = [
+            IssueStatus::Triage,
+            IssueStatus::SpecNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::ResearchInProgress,
+            IssueStatus::ResearchInReview,
+            IssueStatus::ReadyForPlan,
+            IssueStatus::PlanInProgress,
+            IssueStatus::PlanInReview,
+            IssueStatus::ReadyForDev,
+            IssueStatus::InDev,
+            IssueStatus::CodeReview,
+            IssueStatus::Done,
+        ];
+        for window in chain.windows(2) {
+            let from = &window[0];
+            let to = &window[1];
+            assert!(from.can_transition_to(to), "{from:?} → {to:?} (adjacent forward) should be allowed");
+        }
+    }
+
+    #[test]
+    fn forward_skip_moves_are_denied() {
+        assert!(!IssueStatus::Triage.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(!IssueStatus::ReadyForDev.can_transition_to(&IssueStatus::CodeReview));
+        assert!(!IssueStatus::PlanInProgress.can_transition_to(&IssueStatus::ReadyForDev));
+    }
+
+    #[test]
+    fn backward_moves_to_any_earlier_state_are_allowed() {
+        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::SpecNeeded));
+        assert!(IssueStatus::PlanInReview.can_transition_to(&IssueStatus::ReadyForPlan));
+        assert!(IssueStatus::Done.can_transition_to(&IssueStatus::Triage));
+        assert!(IssueStatus::InDev.can_transition_to(&IssueStatus::ResearchNeeded));
+    }
+
+    #[test]
+    fn spec_examples_from_design_doc() {
+        assert!(IssueStatus::SpecNeeded.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(IssueStatus::ResearchNeeded.can_transition_to(&IssueStatus::ResearchInProgress));
+        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::SpecNeeded));
+        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::ResearchInReview));
+        assert!(IssueStatus::ResearchInReview.can_transition_to(&IssueStatus::ReadyForPlan));
     }
 }

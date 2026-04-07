@@ -11,6 +11,7 @@ pub trait IssueService: Send + Sync {
     async fn find_by_token(&self, token: IssueToken) -> Result<Option<Issue>, Error>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Issue>, Error>;
     async fn list_issues(&self, project_id: crate::project::ProjectId, filter: IssueFilter) -> Result<Vec<Issue>, Error>;
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus) -> Result<Issue, Error>;
 }
 
 pub(crate) struct IssueServiceImpl {
@@ -54,6 +55,20 @@ impl IssueService for IssueServiceImpl {
 
     async fn update_issue(&self, issue: Issue) -> Result<Issue, Error> {
         with_transaction!(self, issue_repository, |tx| issue_repository.update(tx, issue).await)
+    }
+
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus) -> Result<Issue, Error> {
+        with_transaction!(self, issue_repository, |tx| {
+            let mut issue = issue_repository
+                .find_by_id(tx, token.id())
+                .await?
+                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+            if !issue.status.can_transition_to(&new_status) {
+                return Err(Error::Validation(format!("illegal transition: {} → {}", issue.status, new_status)));
+            }
+            issue.status = new_status;
+            issue_repository.update(tx, issue).await
+        })
     }
 
     async fn find_by_id(&self, id: IssueId) -> Result<Option<Issue>, Error> {
@@ -224,5 +239,80 @@ mod tests {
         let result = svc.find_by_token(token).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().id, 42);
+    }
+
+    #[tokio::test]
+    async fn transition_issue_success() {
+        let issue = fake_issue(42, 1, 3); // status: Triage
+        let transitioned = {
+            let mut i = issue.clone();
+            i.status = IssueStatus::SpecNeeded;
+            i
+        };
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().withf(|_, id| *id == 42).returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let t = transitioned.clone();
+            issue_repo
+                .expect_update()
+                .withf(|_, i| i.status == IssueStatus::SpecNeeded)
+                .returning(move |_, _| {
+                    let t = t.clone();
+                    Box::pin(async move { Ok(t) })
+                });
+        }
+        let svc = make_svc(MockProjectRepository::new(), issue_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().status, IssueStatus::SpecNeeded);
+    }
+
+    #[tokio::test]
+    async fn transition_issue_illegal_transition_returns_validation_error() {
+        let issue = fake_issue(42, 1, 3); // status: Triage
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().withf(|_, id| *id == 42).returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let svc = make_svc(MockProjectRepository::new(), issue_repo);
+        // Triage → Done skips all intermediate steps — illegal
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Done).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn transition_issue_not_found() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        let svc = make_svc(MockProjectRepository::new(), issue_repo);
+        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::SpecNeeded).await;
+        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
+    }
+
+    #[tokio::test]
+    async fn transition_issue_self_transition_is_validation_error() {
+        let issue = fake_issue(42, 1, 3); // status: Triage
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let svc = make_svc(MockProjectRepository::new(), issue_repo);
+        // Triage → Triage is a self-transition — illegal
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Triage).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
     }
 }
