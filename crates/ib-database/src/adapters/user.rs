@@ -118,6 +118,10 @@ impl UserRepository for UserRepositoryAdapter {
             .map_err(handle_dberr)?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
 
+        if existing.version != user.version as i64 {
+            return Err(Error::RepositoryError(RepositoryError::Conflict));
+        }
+
         let mut updater: users::ActiveModel = existing.clone().into();
 
         if existing.username != user.username {
