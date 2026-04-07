@@ -41,6 +41,8 @@ pub(crate) struct CreateArgs {
     pub slug: String,
     #[arg(long)]
     pub prefix: String,
+    #[arg(long)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -118,7 +120,7 @@ pub(crate) async fn cmd_project(host: &str, port: u16, args: ProjectArgs) -> any
 // ── Implementations ──────────────────────────────────────────────────────────
 
 async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<()> {
-    let p = project::api::create_project(host, port, &args.name, &args.slug, &args.prefix)
+    let p = project::api::create_project(host, port, &args.name, &args.slug, &args.prefix, args.description.as_deref())
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     print_project(&p);
@@ -212,6 +214,9 @@ fn print_project(p: &ProjectResponse) {
     println!("Name:     {}", p.name);
     println!("Slug:     {}", p.slug);
     println!("Prefix:   {}", p.prefix);
+    if let Some(desc) = &p.description {
+        println!("Desc:     {desc}");
+    }
     println!("Created:  {}", p.created_at);
     println!("Updated:  {}", p.updated_at);
 }

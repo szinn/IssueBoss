@@ -38,6 +38,7 @@ fn project_to_proto(project: ib_core::project::Project) -> ProjectResponse {
         name: project.name,
         slug: project.slug,
         prefix: project.prefix,
+        description: project.description,
         created_at: project.created_at.to_rfc3339(),
         updated_at: project.updated_at.to_rfc3339(),
     }

@@ -101,18 +101,20 @@ message ListApiKeysResponse {
 // ── Project messages ──────────────────────────────────────────────────────────
 
 message ProjectResponse {
-  string token      = 1;
-  string name       = 2;
-  string slug       = 3;
-  string prefix     = 4;
-  string created_at = 5;  // RFC 3339
-  string updated_at = 6;  // RFC 3339
+  string token        = 1;
+  string name         = 2;
+  string slug         = 3;
+  string prefix       = 4;
+  string created_at   = 5;  // RFC 3339
+  string updated_at   = 6;  // RFC 3339
+  optional string description = 7;
 }
 
 message CreateProjectRequest {
-  string name   = 1;
-  string slug   = 2;
-  string prefix = 3;
+  string name             = 1;
+  string slug             = 2;
+  string prefix           = 3;
+  optional string description = 4;
 }
 
 message UpdateProjectRequest {

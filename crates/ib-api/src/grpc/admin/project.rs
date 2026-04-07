@@ -17,7 +17,7 @@ pub(crate) mod handler {
     };
 
     pub(crate) async fn create_project(core: &Arc<CoreServices>, req: CreateProjectRequest) -> Result<ProjectResponse, Error> {
-        let new_project = NewProject::new(&req.name, &req.slug, &req.prefix, None::<String>)?;
+        let new_project = NewProject::new(&req.name, &req.slug, &req.prefix, req.description)?;
         let project = core.project_service().create_project(new_project).await?;
         Ok(project_to_proto(project))
     }
@@ -164,12 +164,13 @@ pub mod api {
         },
     };
 
-    pub async fn create_project(host: &str, port: u16, name: &str, slug: &str, prefix: &str) -> Result<ProjectResponse, Error> {
+    pub async fn create_project(host: &str, port: u16, name: &str, slug: &str, prefix: &str, description: Option<&str>) -> Result<ProjectResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(CreateProjectRequest {
             name: name.to_owned(),
             slug: slug.to_owned(),
             prefix: prefix.to_owned(),
+            description: description.map(str::to_owned),
         }));
         client
             .create_project(req)
@@ -342,6 +343,7 @@ mod tests {
                 name: "MyApp".into(),
                 slug: "myapp".into(),
                 prefix: "TP".into(),
+                description: None,
             },
         )
         .await
@@ -400,6 +402,7 @@ mod tests {
                 name: "MyApp".into(),
                 slug: "myapp".into(),
                 prefix: "toolong".into(),
+                description: None,
             },
         )
         .await
