@@ -33,6 +33,10 @@ async fn main() -> anyhow::Result<()> {
             use crate::commands::project::cmd_project;
             cmd_project(&cli.host, cli.port, args).await
         }
+        Commands::Issue(args) => {
+            use crate::commands::issue::cmd_issue;
+            cmd_issue(&cli.host, cli.port, args).await
+        }
         Commands::ApiKey(args) => {
             use crate::commands::api_key::cmd_api_key;
             cmd_api_key(&cli.host, cli.port, args).await
