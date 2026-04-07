@@ -172,6 +172,55 @@ message ListProjectMembersResponse {
   repeated ProjectMemberResponse members = 1;
 }
 
+// ── Issue messages ────────────────────────────────────────────────────────────
+
+message IssueResponse {
+  string          token         = 1;
+  string          project_slug  = 2;
+  uint32          number        = 3;
+  string          title         = 4;
+  string          description   = 5;
+  string          status        = 6;
+  string          priority      = 7;
+  optional string size          = 8;
+  string          slug          = 9;
+  string          created_at    = 10;  // RFC 3339
+  string          updated_at    = 11;  // RFC 3339
+}
+
+message CreateIssueRequest {
+  string          project_slug = 1;
+  string          title        = 2;
+  string          description  = 3;
+  string          priority     = 4;   // IssuePriority as string, e.g. "High"
+  optional string size         = 5;   // IssueSize as string, e.g. "Small"
+}
+
+message UpdateIssueRequest {
+  string          token       = 1;   // issue token
+  optional string title       = 2;
+  optional string description = 3;
+  optional string status      = 4;
+  optional string priority    = 5;
+  optional string size        = 6;
+}
+
+message GetIssueRequest {
+  string token = 1;
+}
+
+message ListIssuesRequest {
+  string          project_slug = 1;
+  optional string status       = 2;
+  optional string priority     = 3;
+  optional string size         = 4;
+  optional uint64 limit        = 5;
+}
+
+message ListIssuesResponse {
+  repeated IssueResponse issues = 1;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 service AdminService {
@@ -203,4 +252,10 @@ service AdminService {
   rpc UpdateProjectMember(UpdateProjectMemberRequest) returns (ProjectMemberResponse);
   rpc RemoveProjectMember(RemoveProjectMemberRequest) returns (Empty);
   rpc ListProjectMembers(ListProjectMembersRequest)   returns (ListProjectMembersResponse);
+
+  // Issue management — requires SuperAdmin or Admin capability
+  rpc CreateIssue(CreateIssueRequest) returns (IssueResponse);
+  rpc UpdateIssue(UpdateIssueRequest) returns (IssueResponse);
+  rpc GetIssue(GetIssueRequest)       returns (IssueResponse);
+  rpc ListIssues(ListIssuesRequest)   returns (ListIssuesResponse);
 }

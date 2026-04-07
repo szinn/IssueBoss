@@ -5,16 +5,18 @@ use tonic::{Request, Response, Status};
 
 use crate::grpc::{
     admin_proto::{
-        AddProjectMemberRequest, CreateApiKeyRequest, CreateApiKeyResponse, CreateProjectRequest, CreateUserRequest, DeleteProjectRequest, DeleteUserRequest,
-        Empty, GetProjectRequest, GetUserRequest, ListApiKeysRequest, ListApiKeysResponse, ListProjectMembersRequest, ListProjectMembersResponse,
-        ListProjectsRequest, ListProjectsResponse, ListUsersRequest, ListUsersResponse, ProjectMemberResponse, ProjectResponse, RemoveProjectMemberRequest,
-        RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
+        AddProjectMemberRequest, CreateApiKeyRequest, CreateApiKeyResponse, CreateIssueRequest, CreateProjectRequest, CreateUserRequest, DeleteProjectRequest,
+        DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest, IssueResponse, ListApiKeysRequest, ListApiKeysResponse,
+        ListIssuesRequest, ListIssuesResponse, ListProjectMembersRequest, ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse,
+        ListUsersRequest, ListUsersResponse, ProjectMemberResponse, ProjectResponse, RemoveProjectMemberRequest, RevokeApiKeyRequest, SuperAdminRequest,
+        SuperAdminResponse, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
         admin_service_server::AdminService,
     },
     error::map_core_error,
 };
 
 pub mod api_key;
+pub mod issue;
 pub mod project;
 pub mod super_admin;
 pub mod user;
@@ -41,6 +43,22 @@ fn project_to_proto(project: ib_core::project::Project) -> ProjectResponse {
         description: project.description,
         created_at: project.created_at.to_rfc3339(),
         updated_at: project.updated_at.to_rfc3339(),
+    }
+}
+
+fn issue_to_proto(issue: ib_core::issue::Issue, project_slug: &str) -> IssueResponse {
+    IssueResponse {
+        token: issue.token.to_string(),
+        project_slug: project_slug.to_owned(),
+        number: issue.number,
+        title: issue.title,
+        description: issue.description,
+        status: issue.status.to_string(),
+        priority: issue.priority.to_string(),
+        size: issue.size.map(|s| s.to_string()),
+        slug: issue.slug,
+        created_at: issue.created_at.to_rfc3339(),
+        updated_at: issue.updated_at.to_rfc3339(),
     }
 }
 
@@ -222,6 +240,42 @@ impl AdminService for GrpcAdminService {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
         project::handler::list_project_members(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn create_issue(&self, request: Request<CreateIssueRequest>) -> Result<Response<IssueResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        issue::handler::create_issue(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn update_issue(&self, request: Request<UpdateIssueRequest>) -> Result<Response<IssueResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        issue::handler::update_issue(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn get_issue(&self, request: Request<GetIssueRequest>) -> Result<Response<IssueResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        issue::handler::get_issue(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn list_issues(&self, request: Request<ListIssuesRequest>) -> Result<Response<ListIssuesResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        issue::handler::list_issues(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)
