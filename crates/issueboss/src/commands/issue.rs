@@ -81,7 +81,7 @@ pub(crate) struct TransitionArgs {
     /// Issue slug (e.g. IB-1)
     #[arg(long)]
     pub issue: String,
-    /// New status (e.g. SpecNeeded, InDev, Done)
+    /// New status (e.g. SpecNeeded, InProgress, Done)
     #[arg(long)]
     pub status: String,
 }

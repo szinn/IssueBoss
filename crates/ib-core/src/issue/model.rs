@@ -37,7 +37,7 @@ pub enum IssueStatus {
     PlanInProgress,
     PlanInReview,
     ReadyForDev,
-    InDev,
+    InProgress,
     CodeReview,
     Done,
     Backlog,
@@ -63,7 +63,7 @@ impl FromStr for IssueStatus {
             "PlanInProgress" => Ok(Self::PlanInProgress),
             "PlanInReview" => Ok(Self::PlanInReview),
             "ReadyForDev" => Ok(Self::ReadyForDev),
-            "InDev" => Ok(Self::InDev),
+            "InProgress" => Ok(Self::InProgress),
             "CodeReview" => Ok(Self::CodeReview),
             "Done" => Ok(Self::Done),
             "Backlog" => Ok(Self::Backlog),
@@ -229,7 +229,7 @@ impl IssueStatus {
             Self::PlanInProgress => Some(6),
             Self::PlanInReview => Some(7),
             Self::ReadyForDev => Some(8),
-            Self::InDev => Some(9),
+            Self::InProgress => Some(9),
             Self::CodeReview => Some(10),
             Self::Done => Some(11),
             Self::Backlog | Self::Canceled => None,
@@ -315,7 +315,7 @@ mod tests {
             IssueStatus::PlanInProgress,
             IssueStatus::PlanInReview,
             IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::CodeReview,
             IssueStatus::Done,
             IssueStatus::Backlog,
@@ -371,7 +371,7 @@ mod tests {
     fn self_transition_is_always_denied() {
         for s in [
             IssueStatus::Triage,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::Done,
             IssueStatus::Backlog,
             IssueStatus::Canceled,
@@ -392,7 +392,7 @@ mod tests {
             IssueStatus::PlanInProgress,
             IssueStatus::PlanInReview,
             IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::CodeReview,
             IssueStatus::Done,
             IssueStatus::Backlog,
@@ -407,7 +407,7 @@ mod tests {
             IssueStatus::Triage,
             IssueStatus::SpecNeeded,
             IssueStatus::ResearchInProgress,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::Done,
         ] {
             assert!(s.can_transition_to(&IssueStatus::Backlog), "{s:?} → Backlog should be allowed");
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn any_non_canceled_state_can_go_to_canceled() {
-        for s in [IssueStatus::Triage, IssueStatus::InDev, IssueStatus::Done, IssueStatus::Backlog] {
+        for s in [IssueStatus::Triage, IssueStatus::InProgress, IssueStatus::Done, IssueStatus::Backlog] {
             assert!(s.can_transition_to(&IssueStatus::Canceled), "{s:?} → Canceled should be allowed");
         }
     }
@@ -433,7 +433,7 @@ mod tests {
             IssueStatus::PlanInProgress,
             IssueStatus::PlanInReview,
             IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::CodeReview,
             IssueStatus::Done,
         ] {
@@ -453,7 +453,7 @@ mod tests {
             IssueStatus::PlanInProgress,
             IssueStatus::PlanInReview,
             IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
+            IssueStatus::InProgress,
             IssueStatus::CodeReview,
             IssueStatus::Done,
         ];
@@ -476,7 +476,7 @@ mod tests {
         assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::SpecNeeded));
         assert!(IssueStatus::PlanInReview.can_transition_to(&IssueStatus::ReadyForPlan));
         assert!(IssueStatus::Done.can_transition_to(&IssueStatus::Triage));
-        assert!(IssueStatus::InDev.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(IssueStatus::InProgress.can_transition_to(&IssueStatus::ResearchNeeded));
     }
 
     #[test]

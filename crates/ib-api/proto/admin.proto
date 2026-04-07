@@ -223,7 +223,7 @@ message ListIssuesResponse {
 
 message TransitionIssueRequest {
   string slug       = 1;   // issue slug, e.g. "IB-1"
-  string new_status = 2;   // IssueStatus as string, e.g. "InDev"
+  string new_status = 2;   // IssueStatus as string, e.g. "InProgress"
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

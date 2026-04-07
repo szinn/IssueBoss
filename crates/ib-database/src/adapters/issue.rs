@@ -324,7 +324,7 @@ mod tests {
             .await
             .unwrap();
 
-        for status in [IssueStatus::Triage, IssueStatus::InDev, IssueStatus::Done] {
+        for status in [IssueStatus::Triage, IssueStatus::InProgress, IssueStatus::Done] {
             let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
             let record = NewIssueRecord {
                 project_id: project.id,
@@ -340,11 +340,11 @@ mod tests {
         }
 
         let filter = IssueFilter {
-            status: Some(IssueStatus::InDev),
+            status: Some(IssueStatus::InProgress),
             ..Default::default()
         };
         let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
         assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].status, IssueStatus::InDev);
+        assert_eq!(issues[0].status, IssueStatus::InProgress);
     }
 }
