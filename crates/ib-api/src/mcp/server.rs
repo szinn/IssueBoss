@@ -1,0 +1,952 @@
+use std::sync::Arc;
+
+use ib_core::{
+    CoreServices,
+    issue::{IssueFilter, IssuePriority, IssueSize, IssueStatus, NewIssue},
+    project::Project,
+    user::User,
+};
+use rmcp::{
+    ErrorData as McpError, RoleServer, ServerHandler,
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{
+        Annotated, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, RawResource, RawResourceTemplate, ReadResourceRequestParams,
+        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+    },
+    schemars, tool, tool_handler, tool_router,
+};
+
+// ---------------------------------------------------------------------------
+// Serialisable output structs
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize)]
+pub struct ProjectSummaryMcp {
+    pub token: String,
+    pub name: String,
+    pub slug: String,
+    pub prefix: String,
+    pub description: Option<String>,
+}
+
+impl From<Project> for ProjectSummaryMcp {
+    fn from(p: Project) -> Self {
+        Self {
+            token: p.token.to_string(),
+            name: p.name,
+            slug: p.slug,
+            prefix: p.prefix,
+            description: p.description,
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct IssueSummaryMcp {
+    pub token: String,
+    pub number: u32,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub size: Option<String>,
+    pub slug: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl IssueSummaryMcp {
+    fn from_issue(issue: ib_core::issue::Issue) -> Self {
+        Self {
+            token: issue.token.to_string(),
+            number: issue.number,
+            title: issue.title,
+            description: issue.description,
+            status: issue.status.to_string(),
+            priority: issue.priority.to_string(),
+            size: issue.size.map(|s| s.to_string()),
+            slug: issue.slug,
+            created_at: issue.created_at.to_rfc3339(),
+            updated_at: issue.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tool parameter structs
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListIssuesParams {
+    /// Project slug, e.g. "issueboss"
+    pub project_slug: String,
+    /// Filter by status, e.g. "Triage"
+    pub status: Option<String>,
+    /// Filter by priority, e.g. "High"
+    pub priority: Option<String>,
+    /// Filter by size, e.g. "Small"
+    pub size: Option<String>,
+    /// Max results to return
+    pub limit: Option<u64>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CreateIssueParams {
+    /// Project slug, e.g. "issueboss"
+    pub project_slug: String,
+    /// Issue title
+    pub title: String,
+    /// Issue description (optional)
+    pub description: Option<String>,
+    /// Priority: Urgent, High, Medium, Low (defaults to Medium)
+    pub priority: Option<String>,
+    /// Size: XS, Small, Medium, Large
+    pub size: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct UpdateIssueParams {
+    /// Issue slug, e.g. "IB-5"
+    pub slug: String,
+    /// New title (optional)
+    pub title: Option<String>,
+    /// New description (optional)
+    pub description: Option<String>,
+    /// New priority (optional)
+    pub priority: Option<String>,
+    /// New size (optional)
+    pub size: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct TransitionIssueParams {
+    /// Issue slug, e.g. "IB-5"
+    pub slug: String,
+    /// Target status. Valid values: Triage, SpecNeeded, ResearchNeeded,
+    /// ResearchInProgress, ResearchInReview, ReadyForPlan, PlanInProgress,
+    /// PlanInReview, ReadyForDev, InProgress, CodeReview, Done, Backlog,
+    /// Canceled
+    pub new_status: String,
+}
+
+// ---------------------------------------------------------------------------
+// Error helper
+// ---------------------------------------------------------------------------
+
+fn map_core_err(e: ib_core::Error) -> McpError {
+    match e {
+        ib_core::Error::RepositoryError(ib_core::RepositoryError::NotFound) => McpError::invalid_params("not found", None),
+        ib_core::Error::Validation(msg) => McpError::invalid_params(msg, None),
+        _ => McpError::internal_error("internal server error", None),
+    }
+}
+
+fn serialize<T: serde::Serialize>(value: &T) -> Result<String, McpError> {
+    serde_json::to_string(value).map_err(|e| McpError::internal_error(e.to_string(), None))
+}
+
+// ---------------------------------------------------------------------------
+// IssueBossServer
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct IssueBossServer {
+    core: Arc<CoreServices>,
+    user: User,
+    tool_router: ToolRouter<Self>,
+}
+
+impl std::fmt::Debug for IssueBossServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IssueBossServer").field("user", &self.user.username).finish_non_exhaustive()
+    }
+}
+
+impl IssueBossServer {
+    pub fn new(core: Arc<CoreServices>, user: User) -> Self {
+        Self {
+            core,
+            user,
+            tool_router: Self::tool_router(),
+        }
+    }
+}
+
+#[tool_router]
+impl IssueBossServer {
+    #[tool(
+        description = "List issues in a project. Use status, priority, and size filters to efficiently narrow results. For large projects with thousands of \
+                       issues, always filter by status to avoid retrieving unnecessary data. project_slug is typically pre-configured (e.g. \"issueboss\")."
+    )]
+    async fn list_issues(&self, params: Parameters<ListIssuesParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let project = self
+            .core
+            .project_service()
+            .find_by_slug(&p.project_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("project '{}' not found", p.project_slug), None))?;
+
+        let filter = IssueFilter {
+            status: p
+                .status
+                .as_deref()
+                .map(|s| {
+                    s.parse::<IssueStatus>()
+                        .map_err(|_| McpError::invalid_params(format!("invalid status: {s}"), None))
+                })
+                .transpose()?,
+            priority: p
+                .priority
+                .as_deref()
+                .map(|s| {
+                    s.parse::<IssuePriority>()
+                        .map_err(|_| McpError::invalid_params(format!("invalid priority: {s}"), None))
+                })
+                .transpose()?,
+            size: p
+                .size
+                .as_deref()
+                .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
+                .transpose()?,
+            limit: p.limit,
+        };
+
+        let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;
+
+        let summaries: Vec<IssueSummaryMcp> = issues.into_iter().map(IssueSummaryMcp::from_issue).collect();
+        serialize(&summaries)
+    }
+
+    #[tool(
+        description = "Create a new issue in a project. Priority defaults to Medium if omitted. Size is optional. Use project_slug to identify the project."
+    )]
+    async fn create_issue(&self, params: Parameters<CreateIssueParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let project = self
+            .core
+            .project_service()
+            .find_by_slug(&p.project_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("project '{}' not found", p.project_slug), None))?;
+
+        let priority = p
+            .priority
+            .as_deref()
+            .map(|s| {
+                s.parse::<IssuePriority>()
+                    .map_err(|_| McpError::invalid_params(format!("invalid priority: {s}"), None))
+            })
+            .transpose()?
+            .unwrap_or(IssuePriority::Medium);
+
+        let size = p
+            .size
+            .as_deref()
+            .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
+            .transpose()?;
+
+        let new_issue = NewIssue::new(project.id, &project.prefix, p.title, p.description.unwrap_or_default(), priority, size).map_err(map_core_err)?;
+
+        let issue = self.core.issue_service().create_issue(new_issue).await.map_err(map_core_err)?;
+        serialize(&IssueSummaryMcp::from_issue(issue))
+    }
+
+    #[tool(description = "Update an existing issue's title, description, priority, or size.")]
+    async fn update_issue(&self, params: Parameters<UpdateIssueParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let mut issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+
+        if let Some(title) = p.title {
+            issue.title = title;
+        }
+        if let Some(description) = p.description {
+            issue.description = description;
+        }
+        if let Some(priority) = p.priority {
+            issue.priority = priority
+                .parse::<IssuePriority>()
+                .map_err(|_| McpError::invalid_params(format!("invalid priority: {priority}"), None))?;
+        }
+        if let Some(size) = p.size {
+            issue.size = Some(
+                size.parse::<IssueSize>()
+                    .map_err(|_| McpError::invalid_params(format!("invalid size: {size}"), None))?,
+            );
+        }
+
+        let updated = self.core.issue_service().update_issue(issue).await.map_err(map_core_err)?;
+        serialize(&IssueSummaryMcp::from_issue(updated))
+    }
+
+    #[tool(
+        description = "Transition an issue to a new status. Pipeline order: Triage → SpecNeeded → ResearchNeeded → ResearchInProgress → ResearchInReview → \
+                       ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InProgress → CodeReview → Done. Backlog and Canceled are reachable from \
+                       most states. Transitions must follow valid pipeline rules."
+    )]
+    async fn transition_issue(&self, params: Parameters<TransitionIssueParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let new_status = p
+            .new_status
+            .parse::<IssueStatus>()
+            .map_err(|_| McpError::invalid_params(format!("invalid status: {}", p.new_status), None))?;
+
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+
+        let updated = self
+            .core
+            .issue_service()
+            .transition_issue(issue.token, new_status)
+            .await
+            .map_err(map_core_err)?;
+        serialize(&IssueSummaryMcp::from_issue(updated))
+    }
+}
+
+impl IssueBossServer {
+    /// Inner implementation for `read_resource` — testable without a
+    /// `RequestContext`.
+    async fn read_resource_inner(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        if uri == "issueboss://projects" {
+            let projects = self.core.project_service().list_for_user(self.user.id).await.map_err(map_core_err)?;
+            let summaries: Vec<ProjectSummaryMcp> = projects.into_iter().map(Into::into).collect();
+            let json = serialize(&summaries)?;
+            Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(json, uri).with_mime_type("application/json"),
+            ]))
+        } else if let Some(slug) = uri.strip_prefix("issueboss://issues/") {
+            let issue = self
+                .core
+                .issue_service()
+                .find_by_slug(slug)
+                .await
+                .map_err(map_core_err)?
+                .ok_or_else(|| McpError::invalid_params(format!("issue '{slug}' not found"), None))?;
+            let json = serialize(&IssueSummaryMcp::from_issue(issue))?;
+            Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(json, uri).with_mime_type("application/json"),
+            ]))
+        } else {
+            Err(McpError::invalid_params(format!("Unknown resource URI: {uri}"), None))
+        }
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for IssueBossServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
+            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. Triage, InProgress) \
+             to efficiently query large projects. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects lists all \
+             accessible projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        Ok(ListResourcesResult::with_all_items(vec![Annotated::new(
+            RawResource::new("issueboss://projects", "Projects")
+                .with_description("All projects the authenticated user is a member of")
+                .with_mime_type("application/json"),
+            None,
+        )]))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        Ok(ListResourceTemplatesResult::with_all_items(vec![Annotated::new(
+            RawResourceTemplate::new("issueboss://issues/{slug}", "Issue by Slug").with_description("A single issue by slug, e.g. IB-5"),
+            None,
+        )]))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        self.read_resource_inner(&request.uri).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use chrono::Utc;
+    use ib_core::{
+        api_key::MockApiKeyRepository,
+        issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
+        project::{MockProjectRepository, Project, ProjectToken},
+        user::{Capabilities, MockUserRepository, User, UserToken},
+    };
+
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn fake_project(id: u64, slug: &str) -> Project {
+        Project {
+            id,
+            token: ProjectToken::new(id),
+            name: format!("Project {slug}"),
+            slug: slug.to_owned(),
+            prefix: "TP".to_owned(),
+            issue_counter: 0,
+            description: None,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn fake_user(id: u64) -> User {
+        User {
+            id,
+            token: UserToken::new(id),
+            username: "alice".to_owned(),
+            full_name: "Alice".to_owned(),
+            password_hash: "h".to_owned(),
+            email_address: "alice@example.com".to_owned(),
+            capabilities: Capabilities::default(),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn fake_issue(id: u64, project_id: u64, number: u32) -> ib_core::issue::Issue {
+        ib_core::issue::Issue {
+            id,
+            token: IssueToken::new(id),
+            number,
+            project_id,
+            title: format!("Issue {number}"),
+            description: String::new(),
+            status: IssueStatus::Triage,
+            priority: IssuePriority::Medium,
+            size: None,
+            slug: format!("TP-{number}"),
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_core(project_repo: MockProjectRepository, issue_repo: MockIssueRepository) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(MockUserRepository::new()))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    // -----------------------------------------------------------------------
+    // list_issues
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn list_issues_happy_path() {
+        let project = fake_project(1, "myapp");
+        let issue = fake_issue(10, 1, 1);
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_list().returning(move |_, _, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(vec![i]) })
+            });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "myapp".to_string(),
+                status: None,
+                priority: None,
+                size: None,
+                limit: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json.as_array().unwrap().len(), 1);
+        assert_eq!(json[0]["slug"], "TP-1");
+    }
+
+    #[tokio::test]
+    async fn list_issues_project_not_found() {
+        let mut project_repo = MockProjectRepository::new();
+        project_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "nope".to_string(),
+                status: None,
+                priority: None,
+                size: None,
+                limit: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_issues_invalid_status() {
+        let project = fake_project(1, "myapp");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "myapp".to_string(),
+                status: Some("NotAStatus".to_string()),
+                priority: None,
+                size: None,
+                limit: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // create_issue
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn create_issue_happy_path() {
+        let project = fake_project(1, "myapp");
+        let issue = fake_issue(20, 1, 2);
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            let p = project.clone();
+            // create_issue internally calls find_by_id to verify the project exists
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            // create_issue calls increment_issue_counter to get the next issue number
+            project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(2u32) }));
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_create().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(i) })
+            });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .create_issue(Parameters(CreateIssueParams {
+                project_slug: "myapp".to_string(),
+                title: "Test issue".to_string(),
+                description: None,
+                priority: None,
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["slug"], "TP-2");
+    }
+
+    #[tokio::test]
+    async fn create_issue_project_not_found() {
+        let mut project_repo = MockProjectRepository::new();
+        project_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .create_issue(Parameters(CreateIssueParams {
+                project_slug: "nope".to_string(),
+                title: "Test".to_string(),
+                description: None,
+                priority: None,
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_invalid_priority() {
+        let project = fake_project(1, "myapp");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .create_issue(Parameters(CreateIssueParams {
+                project_slug: "myapp".to_string(),
+                title: "Test".to_string(),
+                description: None,
+                priority: Some("NotAPriority".to_string()),
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // update_issue
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn update_issue_happy_path() {
+        let issue = fake_issue(10, 1, 1);
+        let updated = {
+            let mut i = issue.clone();
+            i.title = "Updated title".to_string();
+            i
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let u = updated.clone();
+            issue_repo.expect_update().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(u) })
+            });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .update_issue(Parameters(UpdateIssueParams {
+                slug: "TP-1".to_string(),
+                title: Some("Updated title".to_string()),
+                description: None,
+                priority: None,
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["title"], "Updated title");
+    }
+
+    #[tokio::test]
+    async fn update_issue_not_found() {
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .update_issue(Parameters(UpdateIssueParams {
+                slug: "TP-999".to_string(),
+                title: Some("Title".to_string()),
+                description: None,
+                priority: None,
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_issue_invalid_priority() {
+        let issue = fake_issue(10, 1, 1);
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .update_issue(Parameters(UpdateIssueParams {
+                slug: "TP-1".to_string(),
+                title: None,
+                description: None,
+                priority: Some("NotAPriority".to_string()),
+                size: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // transition_issue
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn transition_issue_happy_path() {
+        let issue = fake_issue(10, 1, 1); // Triage
+        let transitioned = {
+            let mut i = issue.clone();
+            i.status = IssueStatus::SpecNeeded;
+            i
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let t = transitioned.clone();
+            issue_repo
+                .expect_update()
+                .withf(|_, i| i.status == IssueStatus::SpecNeeded)
+                .returning(move |_, _| {
+                    let t = t.clone();
+                    Box::pin(async move { Ok(t) })
+                });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .transition_issue(Parameters(TransitionIssueParams {
+                slug: "TP-1".to_string(),
+                new_status: "SpecNeeded".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["status"], "SpecNeeded");
+    }
+
+    #[tokio::test]
+    async fn transition_issue_not_found() {
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .transition_issue(Parameters(TransitionIssueParams {
+                slug: "TP-999".to_string(),
+                new_status: "SpecNeeded".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn transition_issue_invalid_status() {
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .transition_issue(Parameters(TransitionIssueParams {
+                slug: "TP-1".to_string(),
+                new_status: "NotAStatus".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // read_resource — projects
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn read_resource_projects_happy_path() {
+        let user = fake_user(1);
+        let projects = vec![fake_project(1, "app1"), fake_project(2, "app2")];
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = projects.clone();
+            project_repo.expect_list_for_user().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(p) })
+            });
+        }
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, user);
+
+        let result = server.read_resource_inner("issueboss://projects").await;
+
+        assert!(result.is_ok());
+        let ReadResourceResult { contents, .. } = result.unwrap();
+        assert_eq!(contents.len(), 1);
+        if let ResourceContents::TextResourceContents { text, .. } = &contents[0] {
+            let json: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert_eq!(json.as_array().unwrap().len(), 2);
+        } else {
+            panic!("expected text resource contents");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // read_resource — issues/{slug}
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn read_resource_issue_by_slug_happy_path() {
+        let issue = fake_issue(10, 1, 1);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server.read_resource_inner("issueboss://issues/TP-1").await;
+
+        assert!(result.is_ok());
+        let ReadResourceResult { contents, .. } = result.unwrap();
+        assert_eq!(contents.len(), 1);
+        if let ResourceContents::TextResourceContents { text, .. } = &contents[0] {
+            let json: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert_eq!(json["slug"], "TP-1");
+        } else {
+            panic!("expected text resource contents");
+        }
+    }
+
+    #[tokio::test]
+    async fn read_resource_unknown_uri_returns_error() {
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+
+        let core = make_core(project_repo, issue_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server.read_resource_inner("issueboss://unknown").await;
+
+        assert!(result.is_err());
+    }
+}
