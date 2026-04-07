@@ -143,6 +143,7 @@ pub struct Issue {
     pub priority: IssuePriority,
     pub size: Option<IssueSize>,
     pub slug: String,
+    pub version: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -309,6 +310,7 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: "BB-42-t".into(),
+            version: 0,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };

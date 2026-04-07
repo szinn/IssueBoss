@@ -111,6 +111,7 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}-issue-{number}"),
+            version: 0,
             created_at: now,
             updated_at: now,
         }
