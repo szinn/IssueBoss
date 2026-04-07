@@ -1,7 +1,15 @@
 use std::sync::Arc;
 
-use axum::{Extension, Json, extract::State, http::StatusCode};
-use ib_core::CoreServices;
+use axum::{
+    Extension, Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
+use ib_core::{
+    CoreServices,
+    issue::{IssueFilter, IssuePriority, IssueSize, IssueToken, NewIssue},
+    project::ProjectToken,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthenticatedUser;
@@ -38,6 +46,182 @@ pub async fn list_projects_handler(
     Ok(Json(projects.into_iter().map(Into::into).collect()))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueSummary {
+    pub token: String,
+    pub project_token: String,
+    pub number: u32,
+    pub reference: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub size: Option<String>,
+    pub slug: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl IssueSummary {
+    fn from_issue(issue: ib_core::issue::Issue, project: &ib_core::project::Project) -> Self {
+        Self {
+            token: issue.token.to_string(),
+            project_token: project.token.to_string(),
+            number: issue.number,
+            reference: issue.reference(&project.prefix),
+            title: issue.title,
+            description: issue.description,
+            status: issue.status.to_string(),
+            priority: issue.priority.to_string(),
+            size: issue.size.map(|s| s.to_string()),
+            slug: issue.slug,
+            created_at: issue.created_at.to_rfc3339(),
+            updated_at: issue.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateIssueBody {
+    pub project_token: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub priority: Option<String>,
+    pub size: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateIssueBody {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub priority: Option<String>,
+    pub size: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListIssuesQuery {
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub size: Option<String>,
+    pub limit: Option<u64>,
+}
+
+pub async fn create_issue_handler(
+    State(core): State<Arc<CoreServices>>,
+    Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
+    Json(body): Json<CreateIssueBody>,
+) -> Result<Json<IssueSummary>, StatusCode> {
+    let project_token = ProjectToken::parse(&body.project_token).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let project = core
+        .project_service()
+        .find_by_token(project_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let priority = body
+        .priority
+        .as_deref()
+        .map(|s| s.parse::<IssuePriority>().map_err(|_| StatusCode::BAD_REQUEST))
+        .transpose()?
+        .unwrap_or(IssuePriority::Medium);
+    let size = body
+        .size
+        .as_deref()
+        .map(|s| s.parse::<IssueSize>().map_err(|_| StatusCode::BAD_REQUEST))
+        .transpose()?;
+    let new_issue =
+        NewIssue::new(project.id, &project.prefix, body.title, body.description.unwrap_or_default(), priority, size).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let issue = core
+        .issue_service()
+        .create_issue(new_issue)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(IssueSummary::from_issue(issue, &project)))
+}
+
+pub async fn get_issue_handler(
+    State(core): State<Arc<CoreServices>>,
+    Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
+    Path(token): Path<String>,
+) -> Result<Json<IssueSummary>, StatusCode> {
+    let issue_token = IssueToken::parse(&token).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let issue = core
+        .issue_service()
+        .find_by_token(issue_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let project = core
+        .project_service()
+        .find_by_id(issue.project_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(IssueSummary::from_issue(issue, &project)))
+}
+
+pub async fn update_issue_handler(
+    State(core): State<Arc<CoreServices>>,
+    Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
+    Path(token): Path<String>,
+    Json(body): Json<UpdateIssueBody>,
+) -> Result<Json<IssueSummary>, StatusCode> {
+    let issue_token = IssueToken::parse(&token).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut issue = core
+        .issue_service()
+        .find_by_token(issue_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let project = core
+        .project_service()
+        .find_by_id(issue.project_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if let Some(title) = body.title {
+        issue.title = title;
+    }
+    if let Some(description) = body.description {
+        issue.description = description;
+    }
+    if let Some(priority) = body.priority {
+        issue.priority = priority.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    }
+    if let Some(size) = body.size {
+        issue.size = Some(size.parse().map_err(|_| StatusCode::BAD_REQUEST)?);
+    }
+    let updated = core.issue_service().update_issue(issue).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(IssueSummary::from_issue(updated, &project)))
+}
+
+pub async fn list_issues_handler(
+    State(core): State<Arc<CoreServices>>,
+    Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
+    Path(project_token_str): Path<String>,
+    Query(query): Query<ListIssuesQuery>,
+) -> Result<Json<Vec<IssueSummary>>, StatusCode> {
+    let project_token = ProjectToken::parse(&project_token_str).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let project = core
+        .project_service()
+        .find_by_token(project_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let filter = IssueFilter {
+        status: query.status.map(|s| s.parse().map_err(|_| StatusCode::BAD_REQUEST)).transpose()?,
+        priority: query.priority.map(|s| s.parse().map_err(|_| StatusCode::BAD_REQUEST)).transpose()?,
+        size: query.size.map(|s| s.parse().map_err(|_| StatusCode::BAD_REQUEST)).transpose()?,
+        limit: query.limit,
+    };
+    let issues = core
+        .issue_service()
+        .list_issues(project.id, filter)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(issues.into_iter().map(|i| IssueSummary::from_issue(i, &project)).collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -45,11 +229,12 @@ mod tests {
     use chrono::Utc;
     use ib_core::{
         api_key::MockApiKeyRepository,
+        issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         project::{MockProjectRepository, Project, ProjectToken},
         user::{MockUserRepository, User, UserToken},
     };
 
-    use super::ProjectSummary;
+    use super::{IssueSummary, ProjectSummary};
     use crate::auth::AuthenticatedUser;
 
     fn fake_project(id: u64, slug: &str) -> Project {
@@ -83,6 +268,24 @@ mod tests {
         }
     }
 
+    fn fake_issue(id: u64, project_id: u64, number: u32) -> ib_core::issue::Issue {
+        ib_core::issue::Issue {
+            id,
+            token: IssueToken::new(id),
+            number,
+            project_id,
+            title: format!("Issue {number}"),
+            description: String::new(),
+            status: IssueStatus::Triage,
+            priority: IssuePriority::Medium,
+            size: None,
+            slug: format!("TP-{number}-issue-{number}"),
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
     fn make_core(project_repo: MockProjectRepository) -> Arc<ib_core::CoreServices> {
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = Arc::new(
@@ -90,6 +293,20 @@ mod tests {
                 .user_repository(Arc::new(MockUserRepository::new()))
                 .api_key_repository(Arc::new(MockApiKeyRepository::new()))
                 .project_repository(Arc::new(project_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    fn make_core_with_issues(project_repo: MockProjectRepository, issue_repo: MockIssueRepository) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(MockUserRepository::new()))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
                 .build()
                 .unwrap(),
         );
@@ -148,5 +365,59 @@ mod tests {
             .unwrap();
         assert_eq!(result.0.len(), 1);
         assert_eq!(result.0[0].slug, "proj");
+    }
+
+    #[test]
+    fn issue_summary_from_issue_sets_all_fields() {
+        let issue = fake_issue(7, 1, 3);
+        let project = fake_project(1, "myapp");
+        let summary = IssueSummary::from_issue(issue, &project);
+        assert!(summary.token.starts_with("I_"));
+        assert!(summary.project_token.starts_with("P_"));
+        assert_eq!(summary.number, 3);
+        assert_eq!(summary.reference, "TP-3");
+        assert_eq!(summary.title, "Issue 3");
+        assert_eq!(summary.status, "Triage");
+        assert_eq!(summary.priority, "Medium");
+        assert!(summary.size.is_none());
+        assert_eq!(summary.slug, "TP-3-issue-3");
+    }
+
+    #[tokio::test]
+    async fn list_issues_handler_returns_issues_for_project() {
+        let user = fake_user(1);
+        let project = fake_project(5, "myapp");
+        let issue = fake_issue(10, 5, 1);
+        let project_token_str = project.token.to_string();
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_list().returning(move |_, _, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(vec![i]) })
+            });
+        }
+        let core = make_core_with_issues(project_repo, issue_repo);
+        use axum::extract::{Path, Query, State};
+        let query = super::ListIssuesQuery {
+            status: None,
+            priority: None,
+            size: None,
+            limit: None,
+        };
+        let result = super::list_issues_handler(State(core), axum::Extension(AuthenticatedUser(user)), Path(project_token_str), Query(query))
+            .await
+            .unwrap();
+        assert_eq!(result.0.len(), 1);
+        assert!(result.0[0].project_token.starts_with("P_"));
+        assert_eq!(result.0[0].number, 1);
     }
 }
