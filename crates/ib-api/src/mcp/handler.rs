@@ -97,6 +97,11 @@ pub struct UpdateIssueBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TransitionIssueBody {
+    pub new_status: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ListIssuesQuery {
     pub status: Option<String>,
     pub priority: Option<String>,
@@ -188,6 +193,35 @@ pub async fn update_issue_handler(
         issue.size = Some(size.parse().map_err(|_| StatusCode::BAD_REQUEST)?);
     }
     let updated = core.issue_service().update_issue(issue).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(IssueSummary::from_issue(updated, &project)))
+}
+
+pub async fn transition_issue_handler(
+    State(core): State<Arc<CoreServices>>,
+    Extension(AuthenticatedUser(_user)): Extension<AuthenticatedUser>,
+    Path(slug): Path<String>,
+    Json(body): Json<TransitionIssueBody>,
+) -> Result<Json<IssueSummary>, StatusCode> {
+    use ib_core::{Error, RepositoryError, issue::IssueStatus};
+
+    let new_status: IssueStatus = body.new_status.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let issue = core
+        .issue_service()
+        .find_by_slug(&slug)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let project = core
+        .project_service()
+        .find_by_id(issue.project_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let updated = core.issue_service().transition_issue(issue.token, new_status).await.map_err(|e| match e {
+        Error::Validation(_) => StatusCode::BAD_REQUEST,
+        Error::RepositoryError(RepositoryError::NotFound) => StatusCode::NOT_FOUND,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
     Ok(Json(IssueSummary::from_issue(updated, &project)))
 }
 
@@ -376,6 +410,104 @@ mod tests {
         assert_eq!(summary.priority, "Medium");
         assert!(summary.size.is_none());
         assert_eq!(summary.slug, "TP-3");
+    }
+
+    #[tokio::test]
+    async fn transition_issue_handler_success() {
+        let user = fake_user(1);
+        let project = fake_project(1, "myapp");
+        let issue = fake_issue(10, 1, 1); // status: Triage
+        let transitioned = {
+            let mut i = issue.clone();
+            i.status = IssueStatus::SpecNeeded;
+            i
+        };
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let t = transitioned.clone();
+            issue_repo
+                .expect_update()
+                .withf(|_, i| i.status == IssueStatus::SpecNeeded)
+                .returning(move |_, _| {
+                    let t = t.clone();
+                    Box::pin(async move { Ok(t) })
+                });
+        }
+        let core = make_core_with_issues(project_repo, issue_repo);
+        use axum::extract::{Path, State};
+        let result = super::transition_issue_handler(
+            State(core),
+            axum::Extension(AuthenticatedUser(user)),
+            Path("TP-1".into()),
+            axum::Json(super::TransitionIssueBody {
+                new_status: "SpecNeeded".into(),
+            }),
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().0.status, "SpecNeeded");
+    }
+
+    #[tokio::test]
+    async fn transition_issue_handler_unknown_status_returns_bad_request() {
+        let user = fake_user(1);
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let core = make_core_with_issues(project_repo, issue_repo);
+        use axum::extract::{Path, State};
+        let result = super::transition_issue_handler(
+            State(core),
+            axum::Extension(AuthenticatedUser(user)),
+            Path("TP-1".into()),
+            axum::Json(super::TransitionIssueBody {
+                new_status: "NotARealStatus".into(),
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(axum::http::StatusCode::BAD_REQUEST)));
+    }
+
+    #[tokio::test]
+    async fn transition_issue_handler_not_found_returns_404() {
+        let user = fake_user(1);
+        let mut project_repo = MockProjectRepository::new();
+        project_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_issues(project_repo, issue_repo);
+        use axum::extract::{Path, State};
+        let result = super::transition_issue_handler(
+            State(core),
+            axum::Extension(AuthenticatedUser(user)),
+            Path("TP-999".into()),
+            axum::Json(super::TransitionIssueBody {
+                new_status: "SpecNeeded".into(),
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(axum::http::StatusCode::NOT_FOUND)));
     }
 
     #[tokio::test]

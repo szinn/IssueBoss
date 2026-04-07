@@ -18,6 +18,8 @@ pub(crate) enum IssueCommands {
     Get(GetArgs),
     #[command(about = "Update an issue")]
     Update(UpdateArgs),
+    #[command(about = "Transition an issue to a new status")]
+    Transition(TransitionArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -74,6 +76,16 @@ pub(crate) struct UpdateArgs {
     pub size: Option<String>,
 }
 
+#[derive(Debug, clap::Args)]
+pub(crate) struct TransitionArgs {
+    /// Issue slug (e.g. IB-1)
+    #[arg(long)]
+    pub issue: String,
+    /// New status (e.g. SpecNeeded, InDev, Done)
+    #[arg(long)]
+    pub status: String,
+}
+
 // ── Dispatcher ───────────────────────────────────────────────────────────────
 
 pub(crate) async fn cmd_issue(host: &str, port: u16, args: IssueArgs) -> anyhow::Result<()> {
@@ -82,6 +94,7 @@ pub(crate) async fn cmd_issue(host: &str, port: u16, args: IssueArgs) -> anyhow:
         IssueCommands::List(a) => cmd_list(host, port, a).await,
         IssueCommands::Get(a) => cmd_get(host, port, a).await,
         IssueCommands::Update(a) => cmd_update(host, port, a).await,
+        IssueCommands::Transition(a) => cmd_transition(host, port, a).await,
     }
 }
 
@@ -155,6 +168,14 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
+    print_issue(&i);
+    Ok(())
+}
+
+async fn cmd_transition(host: &str, port: u16, args: TransitionArgs) -> anyhow::Result<()> {
+    let i = issue::api::transition_issue(host, port, &args.issue, &args.status)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     print_issue(&i);
     Ok(())
 }
