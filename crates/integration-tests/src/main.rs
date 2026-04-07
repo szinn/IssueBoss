@@ -1,4 +1,8 @@
 mod context;
+mod fixtures;
+mod issue;
+mod project;
+mod user;
 
 #[cfg(feature = "postgres")]
 mod postgres;
