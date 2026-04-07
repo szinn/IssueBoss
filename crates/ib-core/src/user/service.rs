@@ -81,12 +81,19 @@ mod tests {
     use super::{UserService, UserServiceImpl};
     use crate::{
         Error, RepositoryError,
+        api_key::repository::MockApiKeyRepository,
         repository::testing::default_repository_service_builder,
         user::{Capabilities, NewUser, User, UserToken, repository::MockUserRepository},
     };
 
-    fn make_svc(user_repo: MockUserRepository) -> UserServiceImpl {
-        let repo_svc = Arc::new(default_repository_service_builder().user_repository(Arc::new(user_repo)).build().unwrap());
+    fn make_svc(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> UserServiceImpl {
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(api_key_repo))
+                .build()
+                .unwrap(),
+        );
         UserServiceImpl::new(repo_svc)
     }
 
@@ -130,7 +137,7 @@ mod tests {
             let u = expected.clone();
             Box::pin(async move { Ok(u) })
         });
-        let result = make_svc(repo).create_user(make_new_user("alice")).await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).create_user(make_new_user("alice")).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().username, "alice");
     }
@@ -140,7 +147,7 @@ mod tests {
         let mut repo = MockUserRepository::new();
         repo.expect_create()
             .returning(|_, _| Box::pin(async { Err(Error::RepositoryError(RepositoryError::Constraint("duplicate".into()))) }));
-        let result = make_svc(repo).create_user(make_new_user("alice")).await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).create_user(make_new_user("alice")).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::Constraint(_)))));
     }
 
@@ -154,7 +161,7 @@ mod tests {
             let u = user.clone();
             Box::pin(async move { Ok(Some(u)) })
         });
-        let result = make_svc(repo).find_by_id(1).await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).find_by_id(1).await;
         assert_eq!(result.unwrap().unwrap().username, "alice");
     }
 
@@ -162,7 +169,7 @@ mod tests {
     async fn find_by_id_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
-        assert!(make_svc(repo).find_by_id(999).await.unwrap().is_none());
+        assert!(make_svc(repo, MockApiKeyRepository::new()).find_by_id(999).await.unwrap().is_none());
     }
 
     // ─── find_by_token ───────────────────────────────────────────────────────
@@ -176,7 +183,7 @@ mod tests {
             let u = user.clone();
             Box::pin(async move { Ok(Some(u)) })
         });
-        let result = make_svc(repo).find_by_token(token).await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).find_by_token(token).await;
         assert_eq!(result.unwrap().unwrap().id, 1);
     }
 
@@ -190,7 +197,7 @@ mod tests {
             let u = user.clone();
             Box::pin(async move { Ok(Some(u)) })
         });
-        let result = make_svc(repo).find_by_username("alice").await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).find_by_username("alice").await;
         assert_eq!(result.unwrap().unwrap().username, "alice");
     }
 
@@ -200,16 +207,18 @@ mod tests {
     async fn delete_user_success() {
         let user = fake_user(1, "alice");
         let deleted = user.clone();
-        let mut repo = MockUserRepository::new();
-        repo.expect_find_by_id().returning(move |_, _| {
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(move |_, _| {
             let u = user.clone();
             Box::pin(async move { Ok(Some(u)) })
         });
-        repo.expect_delete().returning(move |_, _| {
+        user_repo.expect_delete().returning(move |_, _| {
             let d = deleted.clone();
             Box::pin(async move { Ok(d) })
         });
-        let result = make_svc(repo).delete_user(1).await;
+        let mut api_key_repo = MockApiKeyRepository::new();
+        api_key_repo.expect_delete_all_for_user().returning(|_, _| Box::pin(async { Ok(vec![]) }));
+        let result = make_svc(user_repo, api_key_repo).delete_user(1).await;
         assert_eq!(result.unwrap().id, 1);
     }
 
@@ -217,7 +226,7 @@ mod tests {
     async fn delete_user_not_found() {
         let mut repo = MockUserRepository::new();
         repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
-        let result = make_svc(repo).delete_user(999).await;
+        let result = make_svc(repo, MockApiKeyRepository::new()).delete_user(999).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
@@ -232,7 +241,7 @@ mod tests {
             let u = expected.clone();
             Box::pin(async move { Ok(u) })
         });
-        let result = make_svc(repo).list_users().await.unwrap();
+        let result = make_svc(repo, MockApiKeyRepository::new()).list_users().await.unwrap();
         assert_eq!(result.len(), 2);
     }
 
@@ -242,6 +251,6 @@ mod tests {
     async fn any_super_admin_delegates_to_repository() {
         let mut repo = MockUserRepository::new();
         repo.expect_any_super_admin().returning(|_| Box::pin(async { Ok(true) }));
-        assert!(make_svc(repo).any_super_admin().await.unwrap());
+        assert!(make_svc(repo, MockApiKeyRepository::new()).any_super_admin().await.unwrap());
     }
 }
