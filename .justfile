@@ -33,8 +33,8 @@ changelog:
 
 [doc('Build all applications')]
 build:
-    just tailwindcss
-    cargo build --bin ib --all-features
+    # just tailwindcss
+    cargo build --bin issueboss --all-features
 
 [doc('Run IssueBoss')]
 run:

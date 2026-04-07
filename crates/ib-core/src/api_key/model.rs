@@ -51,7 +51,7 @@ pub fn generate_api_key(key_type: &str) -> GeneratedApiKey {
 pub fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
