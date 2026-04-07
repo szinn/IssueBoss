@@ -5,7 +5,7 @@ use ib_core::{
     repository::Transaction,
     user::UserId,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, ModelTrait, QueryFilter, Set, sea_query::Expr};
 
 use crate::{
     entities::{
@@ -163,8 +163,20 @@ impl ProjectRepository for ProjectRepositoryAdapter {
         Ok(result)
     }
 
-    async fn increment_issue_counter(&self, _transaction: &dyn Transaction, _id: ProjectId) -> Result<u32, Error> {
-        unimplemented!("increment_issue_counter: will be implemented in Task 4")
+    async fn increment_issue_counter(&self, transaction: &dyn Transaction, id: ProjectId) -> Result<u32, Error> {
+        let db = TransactionImpl::get_db_transaction(transaction)?;
+        ProjectsEntity::update_many()
+            .col_expr(projects::Column::IssueCounter, Expr::col(projects::Column::IssueCounter).add(1))
+            .filter(projects::Column::Id.eq(id as i64))
+            .exec(db)
+            .await
+            .map_err(handle_dberr)?;
+        let model = prelude::Projects::find_by_id(id as i64)
+            .one(db)
+            .await
+            .map_err(handle_dberr)?
+            .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+        Ok(model.issue_counter as u32)
     }
 }
 
