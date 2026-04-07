@@ -17,6 +17,7 @@ ib-core.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 prost.workspace = true
+rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
