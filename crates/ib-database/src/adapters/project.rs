@@ -26,9 +26,11 @@ impl ProjectRepositoryAdapter {
 
 impl From<projects::Model> for Project {
     fn from(model: projects::Model) -> Self {
+        let token = ProjectToken::new(model.id as u64);
+
         Self {
             id: model.id as u64,
-            token: ProjectToken::new(model.id as u64),
+            token,
             name: model.name,
             slug: model.slug,
             prefix: model.prefix,
@@ -95,6 +97,7 @@ impl ProjectRepository for ProjectRepositoryAdapter {
         let db = TransactionImpl::get_db_transaction(transaction)?;
         let token = ProjectToken::generate();
         let now = Utc::now();
+
         let model = projects::ActiveModel {
             id: Set(token.id() as i64),
             token: Set(token.to_string()),
@@ -106,6 +109,7 @@ impl ProjectRepository for ProjectRepositoryAdapter {
             updated_at: Set(now.into()),
         };
         let model = model.insert(db).await.map_err(handle_dberr)?;
+
         Ok(model.into())
     }
 

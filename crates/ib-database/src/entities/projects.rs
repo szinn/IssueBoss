@@ -24,6 +24,7 @@ pub struct Model {
 impl ActiveModelBehavior for ActiveModel {
     fn new() -> Self {
         let token = ProjectToken::generate();
+
         Self {
             id: Set(token.id() as i64),
             token: Set(token.to_string()),
