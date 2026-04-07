@@ -20,6 +20,10 @@ pub struct AuthenticatedUser(pub ib_core::user::User);
 // ── MCP auth (axum middleware)
 // ────────────────────────────────────────────────
 
+tokio::task_local! {
+    pub static CURRENT_MCP_USER: ib_core::user::User;
+}
+
 /// Axum middleware that validates the `Authorization: Bearer <key>` header.
 /// Injects `AuthenticatedUser` into request extensions on success.
 pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>, mut req: Request, next: Next) -> Result<Response, StatusCode> {
@@ -51,8 +55,12 @@ pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>,
         let _ = svc.api_key_service().record_usage(key_id).await;
     });
 
-    req.extensions_mut().insert(AuthenticatedUser(user));
-    Ok(next.run(req).await)
+    CURRENT_MCP_USER
+        .scope(user.clone(), async move {
+            req.extensions_mut().insert(AuthenticatedUser(user));
+            Ok(next.run(req).await)
+        })
+        .await
 }
 
 // ── gRPC auth helper ─────────────────────────────────────────────────────────
