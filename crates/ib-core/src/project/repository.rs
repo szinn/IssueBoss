@@ -11,6 +11,7 @@ pub trait ProjectRepository: Send + Sync {
     async fn create(&self, transaction: &dyn Transaction, new_project: NewProject) -> Result<Project, Error>;
     async fn update(&self, transaction: &dyn Transaction, project: Project) -> Result<Project, Error>;
     async fn delete(&self, transaction: &dyn Transaction, project: Project) -> Result<Project, Error>;
+    async fn increment_issue_counter(&self, transaction: &dyn Transaction, id: ProjectId) -> Result<u32, Error>;
 }
 
 #[async_trait::async_trait]

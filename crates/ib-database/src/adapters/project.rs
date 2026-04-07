@@ -162,6 +162,10 @@ impl ProjectRepository for ProjectRepositoryAdapter {
         existing.delete(db).await.map_err(handle_dberr)?;
         Ok(result)
     }
+
+    async fn increment_issue_counter(&self, _transaction: &dyn Transaction, _id: ProjectId) -> Result<u32, Error> {
+        unimplemented!("increment_issue_counter: will be implemented in Task 4")
+    }
 }
 
 #[cfg(test)]

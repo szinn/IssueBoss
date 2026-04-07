@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use crate::{
     Error,
     api_key::ApiKeyRepository,
+    issue::IssueRepository,
     project::{ProjectMemberRepository, ProjectRepository},
     user::UserRepository,
 };
@@ -17,6 +18,7 @@ pub struct RepositoryService {
     api_key_repository: Arc<dyn ApiKeyRepository>,
     project_repository: Arc<dyn ProjectRepository>,
     project_member_repository: Arc<dyn ProjectMemberRepository>,
+    issue_repository: Arc<dyn IssueRepository>,
 }
 
 impl RepositoryService {
@@ -48,6 +50,12 @@ impl RepositoryService {
     #[must_use]
     pub fn project_member_repository(&self) -> &Arc<dyn ProjectMemberRepository> {
         &self.project_member_repository
+    }
+
+    /// Returns a reference to the issue repository.
+    #[must_use]
+    pub fn issue_repository(&self) -> &Arc<dyn IssueRepository> {
+        &self.issue_repository
     }
 }
 
@@ -156,6 +164,7 @@ pub mod testing {
     use crate::{
         Error,
         api_key::repository::MockApiKeyRepository,
+        issue::repository::MockIssueRepository,
         project::repository::{MockProjectMemberRepository, MockProjectRepository},
         user::repository::MockUserRepository,
     };
@@ -197,5 +206,6 @@ pub mod testing {
             .api_key_repository(Arc::new(MockApiKeyRepository::new()))
             .project_repository(Arc::new(MockProjectRepository::new()))
             .project_member_repository(Arc::new(MockProjectMemberRepository::new()))
+            .issue_repository(Arc::new(MockIssueRepository::new()))
     }
 }
