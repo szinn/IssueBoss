@@ -124,9 +124,6 @@ impl UserRepository for UserRepositoryAdapter {
 
         let mut updater: users::ActiveModel = existing.clone().into();
 
-        if existing.username != user.username {
-            updater.username = Set(user.username);
-        }
         if existing.full_name != user.full_name {
             updater.full_name = Set(user.full_name);
         }
@@ -145,6 +142,7 @@ impl UserRepository for UserRepositoryAdapter {
         }
 
         let result = updater.update(transaction).await.map_err(handle_dberr)?;
+
         Ok(result.into())
     }
 

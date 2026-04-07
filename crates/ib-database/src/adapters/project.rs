@@ -133,13 +133,15 @@ impl ProjectRepository for ProjectRepositoryAdapter {
         }
 
         let mut updater: projects::ActiveModel = existing.clone().into();
-        // Always Set so that before_save sees is_changed() == true and increments
-        // version. Do not move this behind a diff guard.
-        updater.name = Set(project.name);
+        if existing.name != project.name {
+            updater.name = Set(project.name);
+        }
         if existing.description != project.description {
             updater.description = Set(project.description);
         }
+
         let result = updater.update(db).await.map_err(handle_dberr)?;
+
         Ok(result.into())
     }
 

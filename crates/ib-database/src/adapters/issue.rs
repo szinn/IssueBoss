@@ -96,7 +96,9 @@ impl IssueRepository for IssueRepositoryAdapter {
         updater.status = Set(issue.status.to_string());
         updater.priority = Set(issue.priority.to_string());
         updater.size = Set(issue.size.map(|s| s.to_string()));
+
         let result = updater.update(db).await.map_err(handle_dberr)?;
+
         Ok(result.into())
     }
 

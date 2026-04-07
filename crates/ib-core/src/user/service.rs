@@ -40,12 +40,15 @@ impl UserService for UserServiceImpl {
     }
 
     async fn delete_user(&self, id: UserId) -> Result<User, Error> {
-        with_transaction!(self, user_repository, |tx| {
+        with_transaction!(self, user_repository, api_key_repository, |tx| {
             let user = user_repository
                 .find_by_id(tx, id)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            user_repository.delete(tx, user).await
+            let user: User = user_repository.delete(tx, user).await?;
+            api_key_repository.delete_all_for_user(tx, user.id).await?;
+
+            Ok(user)
         })
     }
 

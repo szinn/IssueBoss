@@ -152,6 +152,7 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_issue(
         host: &str,
         port: u16,
