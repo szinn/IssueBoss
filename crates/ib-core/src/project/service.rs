@@ -147,6 +147,8 @@ mod tests {
             slug: slug.to_owned(),
             prefix: "TP".to_owned(),
             issue_counter: 0,
+            description: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         }
@@ -172,7 +174,7 @@ mod tests {
             Box::pin(async move { Ok(p) })
         });
         let svc = make_svc(repo, MockProjectMemberRepository::new());
-        let result = svc.create_project(NewProject::new("MyApp", "myapp", "MA").unwrap()).await;
+        let result = svc.create_project(NewProject::new("MyApp", "myapp", "MA", None::<String>).unwrap()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().slug, "myapp");
     }

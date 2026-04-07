@@ -35,6 +35,8 @@ impl From<projects::Model> for Project {
             slug: model.slug,
             prefix: model.prefix,
             issue_counter: model.issue_counter as u32,
+            description: model.description,
+            version: model.version as u64,
             created_at: model.created_at.with_timezone(&chrono::Utc),
             updated_at: model.updated_at.with_timezone(&chrono::Utc),
         }
@@ -105,6 +107,8 @@ impl ProjectRepository for ProjectRepositoryAdapter {
             slug: Set(new_project.slug),
             prefix: Set(new_project.prefix),
             issue_counter: Set(0),
+            description: Set(new_project.description),
+            version: Set(0),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
         };
@@ -139,7 +143,6 @@ impl ProjectRepository for ProjectRepositoryAdapter {
             .await
             .map_err(handle_dberr)?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-        // No optimistic concurrency guard: Project has no version field.
         let result: Project = existing.clone().into();
         existing.delete(db).await.map_err(handle_dberr)?;
         Ok(result)
@@ -166,7 +169,7 @@ mod tests {
         let tx = svc.repository().begin().await.unwrap();
         let created = svc
             .project_repository()
-            .create(&*tx, NewProject::new("MyApp", "myapp", "MA").unwrap())
+            .create(&*tx, NewProject::new("MyApp", "myapp", "MA", None::<String>).unwrap())
             .await
             .unwrap();
         let found = svc.project_repository().find_by_id(&*tx, created.id).await.unwrap().unwrap();
@@ -179,7 +182,7 @@ mod tests {
         let svc = setup().await;
         let tx = svc.repository().begin().await.unwrap();
         svc.project_repository()
-            .create(&*tx, NewProject::new("MyApp", "myapp", "MA").unwrap())
+            .create(&*tx, NewProject::new("MyApp", "myapp", "MA", None::<String>).unwrap())
             .await
             .unwrap();
         let found = svc.project_repository().find_by_slug(&*tx, "myapp").await.unwrap();
@@ -205,11 +208,11 @@ mod tests {
             .unwrap();
         let p1 = svc
             .project_repository()
-            .create(&*tx, NewProject::new("App1", "app1", "APP").unwrap())
+            .create(&*tx, NewProject::new("App1", "app1", "APP", None::<String>).unwrap())
             .await
             .unwrap();
         svc.project_repository()
-            .create(&*tx, NewProject::new("App2", "app2", "APT").unwrap())
+            .create(&*tx, NewProject::new("App2", "app2", "APT", None::<String>).unwrap())
             .await
             .unwrap();
         svc.project_member_repository()
@@ -234,7 +237,7 @@ mod tests {
         let tx = svc.repository().begin().await.unwrap();
         let p = svc
             .project_repository()
-            .create(&*tx, NewProject::new("Del", "del", "DL").unwrap())
+            .create(&*tx, NewProject::new("Del", "del", "DL", None::<String>).unwrap())
             .await
             .unwrap();
         svc.project_repository().delete(&*tx, p.clone()).await.unwrap();

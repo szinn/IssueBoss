@@ -16,6 +16,8 @@ pub struct Model {
     #[sea_orm(unique)]
     pub prefix: String,
     pub issue_counter: i32,
+    pub description: Option<String>,
+    pub version: i64,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
@@ -29,6 +31,7 @@ impl ActiveModelBehavior for ActiveModel {
             id: Set(token.id() as i64),
             token: Set(token.to_string()),
             issue_counter: Set(0),
+            version: Set(0),
             created_at: Set(Utc::now().into()),
             updated_at: Set(Utc::now().into()),
             ..ActiveModelTrait::default()
@@ -40,6 +43,7 @@ impl ActiveModelBehavior for ActiveModel {
         C: ConnectionTrait,
     {
         if self.is_changed() {
+            self.version = Set(self.version.unwrap() + 1);
             self.updated_at = Set(Utc::now().into());
         }
         Ok(self)

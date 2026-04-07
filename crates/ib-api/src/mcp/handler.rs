@@ -60,6 +60,8 @@ mod tests {
             slug: slug.to_owned(),
             prefix: "TP".to_owned(),
             issue_counter: 0,
+            description: None,
+            version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

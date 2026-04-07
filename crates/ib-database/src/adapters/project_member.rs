@@ -128,7 +128,11 @@ mod tests {
             .create(&*tx, NewUser::new("alice", "pass", "a@a.com", "Alice", Capabilities::default(), false).unwrap())
             .await
             .unwrap();
-        let project = svc.project_repository().create(&*tx, NewProject::new("P1", "p1", "PA").unwrap()).await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("P1", "p1", "PA", None::<String>).unwrap())
+            .await
+            .unwrap();
         svc.project_member_repository()
             .create(
                 &*tx,
@@ -158,7 +162,11 @@ mod tests {
             .create(&*tx, NewUser::new("u2", "p", "u2@a.com", "U2", Capabilities::default(), false).unwrap())
             .await
             .unwrap();
-        let project = svc.project_repository().create(&*tx, NewProject::new("P2", "p2", "PB").unwrap()).await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("P2", "p2", "PB", None::<String>).unwrap())
+            .await
+            .unwrap();
         svc.project_member_repository()
             .create(
                 &*tx,

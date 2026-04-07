@@ -16,6 +16,8 @@ pub struct Project {
     pub slug: String,
     pub prefix: String,
     pub issue_counter: u32,
+    pub description: Option<String>,
+    pub version: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -25,10 +27,16 @@ pub struct NewProject {
     pub name: String,
     pub slug: String,
     pub prefix: String,
+    pub description: Option<String>,
 }
 
 impl NewProject {
-    pub fn new(name: impl Into<String>, slug: impl Into<String>, prefix: impl Into<String>) -> Result<Self, crate::Error> {
+    pub fn new(
+        name: impl Into<String>,
+        slug: impl Into<String>,
+        prefix: impl Into<String>,
+        description: Option<impl Into<String>>,
+    ) -> Result<Self, crate::Error> {
         let name = name.into();
         let slug = slug.into();
         let prefix = prefix.into();
@@ -43,7 +51,12 @@ impl NewProject {
             return Err(crate::Error::Validation("prefix must be 1-4 uppercase ASCII letters".into()));
         }
 
-        Ok(Self { name, slug, prefix })
+        Ok(Self {
+            name,
+            slug,
+            prefix,
+            description: description.map(Into::into),
+        })
     }
 }
 
@@ -83,31 +96,31 @@ mod tests {
 
     #[test]
     fn new_project_rejects_empty_name() {
-        let err = NewProject::new("", "myapp", "MA").unwrap_err();
+        let err = NewProject::new("", "myapp", "MA", None::<String>).unwrap_err();
         assert!(matches!(err, crate::Error::Validation(_)));
     }
 
     #[test]
     fn new_project_rejects_empty_slug() {
-        let err = NewProject::new("MyApp", "", "MA").unwrap_err();
+        let err = NewProject::new("MyApp", "", "MA", None::<String>).unwrap_err();
         assert!(matches!(err, crate::Error::Validation(_)));
     }
 
     #[test]
     fn new_project_rejects_invalid_prefix_lowercase() {
-        let err = NewProject::new("MyApp", "myapp", "ma").unwrap_err();
+        let err = NewProject::new("MyApp", "myapp", "ma", None::<String>).unwrap_err();
         assert!(matches!(err, crate::Error::Validation(_)));
     }
 
     #[test]
     fn new_project_rejects_prefix_too_long() {
-        let err = NewProject::new("MyApp", "myapp", "ABCDE").unwrap_err();
+        let err = NewProject::new("MyApp", "myapp", "ABCDE", None::<String>).unwrap_err();
         assert!(matches!(err, crate::Error::Validation(_)));
     }
 
     #[test]
     fn new_project_accepts_valid_input() {
-        let p = NewProject::new("MyApp", "myapp", "MA").unwrap();
+        let p = NewProject::new("MyApp", "myapp", "MA", None::<String>).unwrap();
         assert_eq!(p.prefix, "MA");
     }
 
