@@ -28,8 +28,9 @@ docs/book/
 .vscode
 .zed
 
-# Scratchpad & Backlog
+# Insights, Scratchpad & Backlog
 .backlog/
+.insights/
 .scratchpad/
 
 # Workspaces

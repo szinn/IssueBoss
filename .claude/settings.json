@@ -8,6 +8,7 @@
       "Bash(cargo doc:*)",
       "Bash(cargo metadata:*)",
       "Bash(cargo nextest:*)",
+      "Bash(cargo search:*)",
       "Bash(cargo test:*)",
       "Bash(cargo tree:*)",
       "Bash(direnv allow:*)",
@@ -33,11 +34,14 @@
       "WebFetch(domain:docs.rs)",
       "WebFetch(domain:github.com)",
       "WebSearch",
+      "mcp__issueboss__add_artifact",
       "mcp__issueboss__create_issue",
+      "mcp__issueboss__list_artifacts",
       "mcp__issueboss__list_issues",
       "mcp__issueboss__update_issue"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": ["github", "issueboss", "mermaid"],
   "hooks": {
     "SessionStart": [
