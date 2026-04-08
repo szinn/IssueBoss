@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use ib_utils::{Token, define_token_prefix};
 
-use crate::user::{Capabilities, UserId};
+use crate::{types::Capabilities, user::UserId};
 
 define_token_prefix!(ProjectTokenPrefix, "P_");
 

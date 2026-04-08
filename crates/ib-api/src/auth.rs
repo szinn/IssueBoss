@@ -100,7 +100,7 @@ pub async fn authenticate_grpc(core_services: &Arc<CoreServices>, metadata: &ton
 
 /// Require that the authenticated user has `SuperAdmin` or `Admin` capability.
 pub fn require_admin(user: &ib_core::user::User) -> Result<(), Status> {
-    use ib_core::user::Capability;
+    use ib_core::types::Capability;
     if user.capabilities.has(Capability::SuperAdmin) || user.capabilities.has(Capability::Admin) {
         Ok(())
     } else {
@@ -113,7 +113,10 @@ mod tests {
     #[test]
     fn require_admin_rejects_plain_user() {
         use chrono::Utc;
-        use ib_core::user::{Capabilities, User, UserToken};
+        use ib_core::{
+            types::Capabilities,
+            user::{User, UserToken},
+        };
         let user = User {
             id: 1,
             token: UserToken::new(1),
@@ -135,7 +138,10 @@ mod tests {
     #[test]
     fn require_admin_allows_super_admin() {
         use chrono::Utc;
-        use ib_core::user::{Capabilities, Capability, User, UserToken};
+        use ib_core::{
+            types::{Capabilities, Capability},
+            user::{User, UserToken},
+        };
         let user = User {
             id: 1,
             token: UserToken::new(1),

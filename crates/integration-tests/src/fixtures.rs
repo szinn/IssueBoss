@@ -3,7 +3,8 @@ use ib_core::{
     api_key::{ApiKey, NewApiKey},
     issue::{Issue, IssuePriority, NewIssue},
     project::{NewProject, NewProjectMember, Project, ProjectId, ProjectMember},
-    user::{Capabilities, NewUser, User, UserId},
+    types::Capabilities,
+    user::{NewUser, User, UserId},
 };
 
 pub async fn create_user(services: &CoreServices, username: &str) -> User {

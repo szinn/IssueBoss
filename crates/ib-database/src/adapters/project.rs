@@ -225,10 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_for_user_returns_only_member_projects() {
-        use ib_core::{
-            project::NewProjectMember,
-            user::{Capabilities, NewUser},
-        };
+        use ib_core::{project::NewProjectMember, types::Capabilities, user::NewUser};
         let svc = setup().await;
         let tx = svc.repository().begin().await.unwrap();
         let user = svc

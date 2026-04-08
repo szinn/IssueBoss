@@ -3,7 +3,8 @@ use ib_core::{
     Error, RepositoryError,
     project::{NewProjectMember, ProjectId, ProjectMember, repository::ProjectMemberRepository},
     repository::Transaction,
-    user::{Capabilities, UserId},
+    types::Capabilities,
+    user::UserId,
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, QueryFilter, Set};
 
@@ -108,7 +109,8 @@ mod tests {
     use ib_core::{
         project::{NewProject, NewProjectMember},
         repository::RepositoryService,
-        user::{Capabilities, NewUser},
+        types::Capabilities,
+        user::NewUser,
     };
     use sea_orm::Database;
 

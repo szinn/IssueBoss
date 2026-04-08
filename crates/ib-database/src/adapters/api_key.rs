@@ -145,7 +145,7 @@ mod tests {
             "password123",
             format!("{username}@example.com"),
             format!("Test {username}"),
-            ib_core::user::Capabilities::default(),
+            ib_core::types::Capabilities::default(),
             false,
         )
         .unwrap()

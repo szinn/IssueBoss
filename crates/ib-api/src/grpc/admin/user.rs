@@ -1,10 +1,7 @@
 pub(crate) mod handler {
     use std::sync::Arc;
 
-    use ib_core::{
-        CoreServices, Error, RepositoryError,
-        user::{Capabilities, NewUser},
-    };
+    use ib_core::{CoreServices, Error, RepositoryError, types::Capabilities, user::NewUser};
 
     use crate::grpc::{
         admin::user_to_proto,

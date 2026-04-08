@@ -4,7 +4,7 @@ pub(crate) mod handler {
     use ib_core::{
         CoreServices, Error, RepositoryError,
         project::{NewProject, NewProjectMember},
-        user::Capabilities,
+        types::Capabilities,
     };
 
     use crate::grpc::{
@@ -140,7 +140,7 @@ pub(crate) mod handler {
     }
 
     fn parse_capabilities(raw: &[String]) -> Result<Capabilities, Error> {
-        let caps: Result<Vec<ib_core::user::Capability>, _> = raw
+        let caps: Result<Vec<ib_core::types::Capability>, _> = raw
             .iter()
             .map(|s| serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|_| Error::Validation(format!("unknown capability: {s}"))))
             .collect();

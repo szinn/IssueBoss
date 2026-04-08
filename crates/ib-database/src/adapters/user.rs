@@ -2,7 +2,8 @@ use chrono::Utc;
 use ib_core::{
     Error, RepositoryError,
     repository::Transaction,
-    user::{Capabilities, NewUser, User, UserId, UserToken, repository::UserRepository},
+    types::Capabilities,
+    user::{NewUser, User, UserId, UserToken, repository::UserRepository},
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, QueryFilter, Set};
 
@@ -184,7 +185,8 @@ mod tests {
 
     use ib_core::{
         repository::RepositoryService,
-        user::{Capabilities, Capability, NewUser},
+        types::{Capabilities, Capability},
+        user::NewUser,
     };
     use sea_orm::Database;
 

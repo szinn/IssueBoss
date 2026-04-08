@@ -83,7 +83,8 @@ mod tests {
         Error, RepositoryError,
         api_key::repository::MockApiKeyRepository,
         repository::testing::default_repository_service_builder,
-        user::{Capabilities, NewUser, User, UserToken, repository::MockUserRepository},
+        types::Capabilities,
+        user::{NewUser, User, UserToken, repository::MockUserRepository},
     };
 
     fn make_svc(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> UserServiceImpl {

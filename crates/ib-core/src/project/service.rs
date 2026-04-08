@@ -124,7 +124,8 @@ mod tests {
             repository::{MockProjectMemberRepository, MockProjectRepository},
         },
         repository::testing::default_repository_service_builder,
-        user::{Capabilities, UserId},
+        types::Capabilities,
+        user::UserId,
     };
 
     fn make_svc(project_repo: MockProjectRepository, member_repo: MockProjectMemberRepository) -> ProjectServiceImpl {

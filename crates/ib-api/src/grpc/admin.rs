@@ -358,7 +358,7 @@ mod tests {
             full_name: format!("Test {username}"),
             password_hash: "hash".to_owned(),
             email_address: format!("{username}@example.com"),
-            capabilities: ib_core::user::Capabilities::default(),
+            capabilities: ib_core::types::Capabilities::default(),
             change_password_on_login: false,
             version: 0,
             created_at: Utc::now(),

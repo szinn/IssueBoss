@@ -4,7 +4,8 @@ pub(crate) mod handler {
     use ib_core::{
         CoreServices, Error, RepositoryError,
         api_key::NewApiKey,
-        user::{Capabilities, Capability, NewUser},
+        types::{Capabilities, Capability},
+        user::NewUser,
     };
 
     use crate::grpc::admin_proto::{SuperAdminRequest, SuperAdminResponse};

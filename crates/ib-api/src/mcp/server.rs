@@ -402,7 +402,8 @@ mod tests {
         api_key::MockApiKeyRepository,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         project::{MockProjectRepository, Project, ProjectToken},
-        user::{Capabilities, MockUserRepository, User, UserToken},
+        types::Capabilities,
+        user::{MockUserRepository, User, UserToken},
     };
 
     use super::*;
