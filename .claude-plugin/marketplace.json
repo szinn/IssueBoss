@@ -1,0 +1,20 @@
+{
+  "name": "issueboss-marketplace",
+  "description": "Marketplace for IssueBoss",
+  "owner": {
+    "name": "szinn",
+    "email": "scotte@zinn.ca"
+  },
+  "plugins": [
+    {
+      "name": "issueboss",
+      "description": "IssueBoss project and issue management",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "szinn",
+        "email": "scotte@zinn.ca"
+      }
+    }
+  ]
+}
