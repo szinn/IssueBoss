@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use crate::{
     Error,
     api_key::ApiKeyRepository,
+    artifact::ArtifactRepository,
     issue::IssueRepository,
     project::{ProjectMemberRepository, ProjectRepository},
     user::UserRepository,
@@ -19,6 +20,7 @@ pub struct RepositoryService {
     project_repository: Arc<dyn ProjectRepository>,
     project_member_repository: Arc<dyn ProjectMemberRepository>,
     issue_repository: Arc<dyn IssueRepository>,
+    artifact_repository: Arc<dyn ArtifactRepository>,
 }
 
 impl RepositoryService {
@@ -56,6 +58,12 @@ impl RepositoryService {
     #[must_use]
     pub fn issue_repository(&self) -> &Arc<dyn IssueRepository> {
         &self.issue_repository
+    }
+
+    /// Returns a reference to the artifact repository.
+    #[must_use]
+    pub fn artifact_repository(&self) -> &Arc<dyn ArtifactRepository> {
+        &self.artifact_repository
     }
 }
 
@@ -160,10 +168,11 @@ macro_rules! with_read_only_transaction {
 pub mod testing {
     use std::{any::Any, sync::Arc};
 
-    use super::{MockRepository, RepositoryServiceBuilder, Transaction};
+    use super::{ArtifactRepository, MockRepository, RepositoryServiceBuilder, Transaction};
     use crate::{
         Error,
         api_key::repository::MockApiKeyRepository,
+        artifact::MockArtifactRepository,
         issue::repository::MockIssueRepository,
         project::repository::{MockProjectMemberRepository, MockProjectRepository},
         user::repository::MockUserRepository,
@@ -207,5 +216,6 @@ pub mod testing {
             .project_repository(Arc::new(MockProjectRepository::new()))
             .project_member_repository(Arc::new(MockProjectMemberRepository::new()))
             .issue_repository(Arc::new(MockIssueRepository::new()))
+            .artifact_repository(Arc::new(MockArtifactRepository::new()) as Arc<dyn ArtifactRepository>)
     }
 }

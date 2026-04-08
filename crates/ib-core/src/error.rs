@@ -44,6 +44,9 @@ pub enum Error {
     #[error("Crypto error: {0}")]
     CryptoError(String),
 
+    #[error("Gate failure: condition={condition}")]
+    GateFailure { condition: String, failing_tokens: Vec<String> },
+
     #[error(transparent)]
     RepositoryError(#[from] RepositoryError),
 }
@@ -55,6 +58,7 @@ impl Error {
         match self {
             Self::InvalidId(_) | Self::InvalidPageSize(_) | Self::InvalidToken(_) => ErrorKind::BadRequest,
             Self::Validation(_) => ErrorKind::InvalidInput,
+            Self::GateFailure { .. } => ErrorKind::InvalidInput,
             Self::InvalidTransactionType | Self::Infrastructure(_) | Self::CryptoError(_) => ErrorKind::Internal,
             Self::StorageUnavailable(_) => ErrorKind::ServiceUnavailable,
             Self::RepositoryError(e) => e.kind(),

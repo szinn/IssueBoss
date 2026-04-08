@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use super::model::{Issue, IssueFilter, IssueId, IssueStatus, IssueToken, NewIssue, NewIssueRecord, derive_issue_slug};
-use crate::{Error, RepositoryError, repository::RepositoryService, with_read_only_transaction, with_transaction};
+use crate::{
+    Error, RepositoryError,
+    artifact::model::{ArtifactKind, IssueArtifact, NewArtifact},
+    repository::RepositoryService,
+    with_read_only_transaction, with_transaction,
+};
 
 #[async_trait::async_trait]
 pub trait IssueService: Send + Sync {
@@ -11,7 +16,7 @@ pub trait IssueService: Send + Sync {
     async fn find_by_token(&self, token: IssueToken) -> Result<Option<Issue>, Error>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Issue>, Error>;
     async fn list_issues(&self, project_id: crate::project::ProjectId, filter: IssueFilter) -> Result<Vec<Issue>, Error>;
-    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus) -> Result<Issue, Error>;
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>) -> Result<Issue, Error>;
 }
 
 pub(crate) struct IssueServiceImpl {
@@ -57,8 +62,8 @@ impl IssueService for IssueServiceImpl {
         with_transaction!(self, issue_repository, |tx| issue_repository.update(tx, issue).await)
     }
 
-    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus) -> Result<Issue, Error> {
-        with_transaction!(self, issue_repository, |tx| {
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>) -> Result<Issue, Error> {
+        with_transaction!(self, issue_repository, artifact_repository, |tx| {
             let mut issue = issue_repository
                 .find_by_id(tx, token.id())
                 .await?
@@ -66,8 +71,29 @@ impl IssueService for IssueServiceImpl {
             if !issue.status.can_transition_to(&new_status) {
                 return Err(Error::Validation(format!("illegal transition: {} → {}", issue.status, new_status)));
             }
+            let artifacts = artifact_repository.list(tx, issue.id, None).await?;
+            let auto_reason = check_transition_gate(&issue.status, &new_status, &artifacts)?;
+            let final_reason = reason.or(auto_reason).unwrap_or_default();
+            let from_str = issue.status.to_string();
+            let to_str = new_status.to_string();
             issue.status = new_status;
-            issue_repository.update(tx, issue).await
+            let updated = issue_repository.update(tx, issue).await?;
+            artifact_repository
+                .create(
+                    tx,
+                    NewArtifact {
+                        issue_id: updated.id,
+                        kind: ArtifactKind::StatusTransition,
+                        body: serde_json::json!({
+                            "from": from_str,
+                            "to": to_str,
+                            "reason": final_reason,
+                        }),
+                        created_by: "system".into(),
+                    },
+                )
+                .await?;
+            Ok(updated)
         })
     }
 
@@ -89,6 +115,92 @@ impl IssueService for IssueServiceImpl {
     }
 }
 
+fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[IssueArtifact]) -> Result<Option<String>, Error> {
+    use ArtifactKind::*;
+    match (from, to) {
+        (IssueStatus::Triage, IssueStatus::SpecNeeded) => {
+            if !artifacts.iter().any(|a| a.kind == TriageResult) {
+                return Err(Error::GateFailure {
+                    condition: "missing_triage_result".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            Ok(Some("Triage result recorded".into()))
+        }
+        (IssueStatus::ResearchNeeded, IssueStatus::ResearchInProgress) => {
+            let topics: Vec<_> = artifacts.iter().filter(|a| a.kind == ResearchTopic).collect();
+            if topics.is_empty() {
+                return Err(Error::GateFailure {
+                    condition: "no_research_topics".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            let covered = covered_topic_tokens(artifacts);
+            let uncovered: Vec<String> = topics
+                .iter()
+                .filter(|t| !covered.contains(&t.token.to_string()))
+                .map(|t| t.token.to_string())
+                .collect();
+            if uncovered.is_empty() {
+                return Err(Error::GateFailure {
+                    condition: "all_topics_covered".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            Ok(Some(format!("{} uncovered research topic(s)", uncovered.len())))
+        }
+        (IssueStatus::ResearchInProgress, IssueStatus::ResearchInReview) => {
+            let topics: Vec<_> = artifacts.iter().filter(|a| a.kind == ResearchTopic).collect();
+            if topics.is_empty() {
+                return Err(Error::GateFailure {
+                    condition: "no_research_topics".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            let covered = covered_topic_tokens(artifacts);
+            let uncovered: Vec<String> = topics
+                .iter()
+                .filter(|t| !covered.contains(&t.token.to_string()))
+                .map(|t| t.token.to_string())
+                .collect();
+            if !uncovered.is_empty() {
+                return Err(Error::GateFailure {
+                    condition: "uncovered_research_topics".into(),
+                    failing_tokens: uncovered,
+                });
+            }
+            Ok(Some("All research topics covered".into()))
+        }
+        (IssueStatus::PlanInProgress, IssueStatus::PlanInReview) => {
+            if !artifacts.iter().any(|a| a.kind == Plan) {
+                return Err(Error::GateFailure {
+                    condition: "missing_plan".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            Ok(Some("Plan complete".into()))
+        }
+        (IssueStatus::ReadyForDev, IssueStatus::InDev) => {
+            if !artifacts.iter().any(|a| a.kind == Plan) {
+                return Err(Error::GateFailure {
+                    condition: "missing_plan".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            Ok(Some("Beginning development".into()))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn covered_topic_tokens(artifacts: &[IssueArtifact]) -> std::collections::HashSet<String> {
+    artifacts
+        .iter()
+        .filter(|a| a.kind == ArtifactKind::Research)
+        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -98,6 +210,10 @@ mod tests {
     use super::{IssueService, IssueServiceImpl};
     use crate::{
         Error, RepositoryError,
+        artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        },
         issue::{Issue, IssueFilter, IssueId, IssuePriority, IssueStatus, IssueToken, NewIssue, repository::MockIssueRepository},
         project::{ProjectId, ProjectToken, model::Project, repository::MockProjectRepository},
         repository::testing::default_repository_service_builder,
@@ -138,6 +254,20 @@ mod tests {
         }
     }
 
+    fn fake_artifact(id: u64, issue_id: IssueId, kind: ArtifactKind) -> IssueArtifact {
+        let now = Utc::now();
+        IssueArtifact {
+            id,
+            token: ArtifactToken::new(id),
+            issue_id,
+            kind,
+            body: serde_json::json!({}),
+            created_by: "U_test".into(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
     fn make_svc(project_repo: MockProjectRepository, issue_repo: MockIssueRepository) -> IssueServiceImpl {
         let repo_svc = Arc::new(
             default_repository_service_builder()
@@ -147,6 +277,22 @@ mod tests {
                 .unwrap(),
         );
         IssueServiceImpl::new(repo_svc)
+    }
+
+    fn make_svc_with_artifacts(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        artifact_repo: MockArtifactRepository,
+    ) -> IssueServiceImpl {
+        let rs = Arc::new(
+            default_repository_service_builder()
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .artifact_repository(Arc::new(artifact_repo))
+                .build()
+                .unwrap(),
+        );
+        IssueServiceImpl::new(rs)
     }
 
     #[tokio::test]
@@ -244,6 +390,7 @@ mod tests {
     #[tokio::test]
     async fn transition_issue_success() {
         let issue = fake_issue(42, 1, 3); // status: Triage
+        let triage_artifact = fake_artifact(1, 42, ArtifactKind::TriageResult);
         let transitioned = {
             let mut i = issue.clone();
             i.status = IssueStatus::SpecNeeded;
@@ -267,8 +414,30 @@ mod tests {
                     Box::pin(async move { Ok(t) })
                 });
         }
-        let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded).await;
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let art = triage_artifact.clone();
+            artifact_repo.expect_list().returning(move |_, _, _| {
+                let a = art.clone();
+                Box::pin(async move { Ok(vec![a]) })
+            });
+        }
+        artifact_repo.expect_create().returning(|_, _| {
+            Box::pin(async move {
+                Ok(IssueArtifact {
+                    id: 999,
+                    token: ArtifactToken::new(999),
+                    issue_id: 42,
+                    kind: ArtifactKind::StatusTransition,
+                    body: serde_json::json!({}),
+                    created_by: "system".into(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+            })
+        });
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().status, IssueStatus::SpecNeeded);
     }
@@ -286,7 +455,7 @@ mod tests {
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // Triage → Done skips all intermediate steps — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Done).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Done, None).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
@@ -295,7 +464,7 @@ mod tests {
         let mut issue_repo = MockIssueRepository::new();
         issue_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::SpecNeeded).await;
+        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::SpecNeeded, None).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
@@ -312,7 +481,62 @@ mod tests {
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // Triage → Triage is a self-transition — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Triage).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Triage, None).await;
         assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn transition_triage_to_spec_needed_blocked_without_triage_result() {
+        let issue = fake_issue(42, 1, 3); // Triage
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
+
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None).await;
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
+    }
+
+    #[tokio::test]
+    async fn transition_research_in_progress_to_review_blocked_with_uncovered_topics() {
+        let mut issue = fake_issue(42, 1, 3);
+        issue.status = IssueStatus::ResearchInProgress;
+        let topic = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 42,
+            kind: ArtifactKind::ResearchTopic,
+            body: serde_json::json!({"description": "Investigate auth", "tags": []}),
+            created_by: "U_test".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let t = topic.clone();
+            artifact_repo.expect_list().returning(move |_, _, _| {
+                let t = t.clone();
+                Box::pin(async move { Ok(vec![t]) })
+            });
+        }
+
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchInReview, None).await;
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
     }
 }

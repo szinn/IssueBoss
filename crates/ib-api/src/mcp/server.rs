@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use ib_core::{
     CoreServices,
+    artifact::{ArtifactKind, ArtifactToken, IssueArtifact, NewArtifact},
     issue::{IssueFilter, IssuePriority, IssueSize, IssueStatus, NewIssue},
     project::Project,
     user::User,
@@ -72,6 +73,35 @@ impl IssueSummaryMcp {
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+struct ArtifactMcp {
+    token: String,
+    kind: String,
+    body: serde_json::Value,
+    created_by: String,
+    created_at: String,
+    updated_at: String,
+}
+
+impl ArtifactMcp {
+    fn from_artifact(a: IssueArtifact) -> Self {
+        Self {
+            token: a.token.to_string(),
+            kind: a.kind.to_string(),
+            body: a.body,
+            created_by: a.created_by,
+            created_at: a.created_at.to_rfc3339(),
+            updated_at: a.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TransitionIssueMcp {
+    issue: IssueSummaryMcp,
+    completeness: serde_json::Value,
+}
+
 // ---------------------------------------------------------------------------
 // Tool parameter structs
 // ---------------------------------------------------------------------------
@@ -127,6 +157,46 @@ pub struct TransitionIssueParams {
     /// PlanInReview, ReadyForDev, InDev, CodeReview, Done, Backlog,
     /// Canceled
     pub new_status: String,
+    /// Optional reason for the transition, recorded in the StatusTransition
+    /// artifact
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct AddArtifactParams {
+    /// Issue slug, e.g. "IB-42"
+    slug: String,
+    /// Artifact kind: TriageResult, Spec, Research, Plan, ResearchTopic,
+    /// Comment
+    kind: String,
+    /// JSON body — schema depends on kind (see artifact lifecycle design)
+    body: serde_json::Value,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct UpdateArtifactParams {
+    /// Artifact token, e.g. "A_xxx"
+    artifact_token: String,
+    /// Updated JSON body
+    body: serde_json::Value,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct RemoveArtifactParams {
+    /// Artifact token, e.g. "A_xxx"
+    artifact_token: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct ListArtifactsParams {
+    /// Issue slug, e.g. "IB-42"
+    slug: String,
+    /// Optional list of kinds to filter by (e.g. ["Research", "ResearchTopic"])
+    kinds: Option<Vec<String>>,
+    /// When true, only return ResearchTopics with no corresponding Research
+    /// artifact
+    #[serde(default)]
+    uncovered_only: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -137,12 +207,42 @@ fn map_core_err(e: ib_core::Error) -> McpError {
     match e {
         ib_core::Error::RepositoryError(ib_core::RepositoryError::NotFound) => McpError::invalid_params("not found", None),
         ib_core::Error::Validation(msg) => McpError::invalid_params(msg, None),
+        ib_core::Error::GateFailure { condition, failing_tokens } => McpError::invalid_params(
+            serde_json::json!({
+                "error": "gate_failed",
+                "condition": condition,
+                "tokens": failing_tokens,
+            })
+            .to_string(),
+            None,
+        ),
         _ => McpError::internal_error("internal server error", None),
     }
 }
 
 fn serialize<T: serde::Serialize>(value: &T) -> Result<String, McpError> {
     serde_json::to_string(value).map_err(|e| McpError::internal_error(e.to_string(), None))
+}
+
+fn build_completeness(status: &IssueStatus, artifacts: &[IssueArtifact]) -> serde_json::Value {
+    // Only completed Research artifacts count as covering a topic; cancelled ones
+    // do not.
+    let covered: std::collections::HashSet<String> = artifacts
+        .iter()
+        .filter(|a| a.kind == ArtifactKind::Research && a.body.get("status").and_then(|v| v.as_str()) == Some("completed"))
+        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+        .collect();
+    serde_json::json!({
+        "status": status.to_string(),
+        "has_triage_result": artifacts.iter().any(|a| a.kind == ArtifactKind::TriageResult),
+        "has_spec": artifacts.iter().any(|a| a.kind == ArtifactKind::Spec),
+        "has_plan": artifacts.iter().any(|a| a.kind == ArtifactKind::Plan),
+        "research_topic_count": artifacts.iter().filter(|a| a.kind == ArtifactKind::ResearchTopic).count(),
+        "uncovered_research_topics": artifacts.iter()
+            .filter(|a| a.kind == ArtifactKind::ResearchTopic)
+            .filter(|a| !covered.contains(&a.token.to_string()))
+            .count(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +390,7 @@ impl IssueBossServer {
     #[tool(
         description = "Transition an issue to a new status. Pipeline order: Triage → SpecNeeded → ResearchNeeded → ResearchInProgress → ResearchInReview → \
                        ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InDev → CodeReview → Done. Backlog and Canceled are reachable from most \
-                       states. Transitions must follow valid pipeline rules."
+                       states. Transitions must follow valid pipeline rules. Gated transitions require artifact prerequisites."
     )]
     async fn transition_issue(&self, params: Parameters<TransitionIssueParams>) -> Result<String, McpError> {
         let p = params.0;
@@ -310,10 +410,108 @@ impl IssueBossServer {
         let updated = self
             .core
             .issue_service()
-            .transition_issue(issue.token, new_status)
+            .transition_issue(issue.token, new_status, p.reason)
             .await
             .map_err(map_core_err)?;
-        serialize(&IssueSummaryMcp::from_issue(updated))
+
+        let artifacts = self
+            .core
+            .artifact_service()
+            .list_artifacts(updated.id, None, false)
+            .await
+            .map_err(map_core_err)?;
+
+        let completeness = build_completeness(&updated.status, &artifacts);
+        serialize(&TransitionIssueMcp {
+            issue: IssueSummaryMcp::from_issue(updated),
+            completeness,
+        })
+    }
+
+    #[tool(
+        description = "Add an artifact to an issue. Kinds: TriageResult (path required), Spec (path required), Research (topic_token, status, path when \
+                       completed), Plan (path required), ResearchTopic (description or path), Comment (text). StatusTransition is system-generated only."
+    )]
+    async fn add_artifact(&self, params: Parameters<AddArtifactParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let kind = p
+            .kind
+            .parse::<ArtifactKind>()
+            .map_err(|_| McpError::invalid_params(format!("invalid kind: {}", p.kind), None))?;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        let artifact = self
+            .core
+            .artifact_service()
+            .add_artifact(NewArtifact {
+                issue_id: issue.id,
+                kind,
+                body: p.body,
+                created_by: self.user.token.to_string(),
+            })
+            .await
+            .map_err(map_core_err)?;
+        serialize(&ArtifactMcp::from_artifact(artifact))
+    }
+
+    #[tool(description = "Update an artifact's body. StatusTransition artifacts and file path fields are immutable.")]
+    async fn update_artifact(&self, params: Parameters<UpdateArtifactParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let token = p
+            .artifact_token
+            .parse::<ArtifactToken>()
+            .map_err(|_| McpError::invalid_params(format!("invalid artifact token: {}", p.artifact_token), None))?;
+        let artifact = self.core.artifact_service().update_artifact(token, p.body).await.map_err(map_core_err)?;
+        serialize(&ArtifactMcp::from_artifact(artifact))
+    }
+
+    #[tool(description = "Remove an artifact. For ResearchTopics, prefer adding a Research artifact with status 'cancelled' instead of removing.")]
+    async fn remove_artifact(&self, params: Parameters<RemoveArtifactParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let token = p
+            .artifact_token
+            .parse::<ArtifactToken>()
+            .map_err(|_| McpError::invalid_params(format!("invalid artifact token: {}", p.artifact_token), None))?;
+        self.core.artifact_service().remove_artifact(token).await.map_err(map_core_err)?;
+        serialize(&serde_json::json!({"ok": true}))
+    }
+
+    #[tool(
+        description = "List artifacts for an issue. Filter by kinds (e.g. [\"Research\", \"ResearchTopic\"]); use uncovered_only=true to find ResearchTopics \
+                       not yet addressed by a Research artifact."
+    )]
+    async fn list_artifacts(&self, params: Parameters<ListArtifactsParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        let kinds = p
+            .kinds
+            .map(|ks| {
+                ks.into_iter()
+                    .map(|k| {
+                        k.parse::<ArtifactKind>()
+                            .map_err(|_| McpError::invalid_params(format!("invalid kind: {k}"), None))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let artifacts = self
+            .core
+            .artifact_service()
+            .list_artifacts(issue.id, kinds, p.uncovered_only)
+            .await
+            .map_err(map_core_err)?;
+        serialize(&artifacts.into_iter().map(ArtifactMcp::from_artifact).collect::<Vec<_>>())
     }
 }
 
@@ -469,6 +667,25 @@ mod tests {
                 .api_key_repository(Arc::new(MockApiKeyRepository::new()))
                 .project_repository(Arc::new(project_repo))
                 .issue_repository(Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    fn make_core_with_artifacts(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        artifact_repo: ib_core::artifact::MockArtifactRepository,
+    ) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(MockUserRepository::new()))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .artifact_repository(Arc::new(artifact_repo))
                 .build()
                 .unwrap(),
         );
@@ -783,11 +1000,25 @@ mod tests {
 
     #[tokio::test]
     async fn transition_issue_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
         let issue = fake_issue(10, 1, 1); // Triage
         let transitioned = {
             let mut i = issue.clone();
             i.status = IssueStatus::SpecNeeded;
             i
+        };
+        let triage_artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::TriageResult,
+            body: serde_json::json!({"path": "insights/triage/tp-1.md"}),
+            created_by: "U_test".into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         };
 
         let project_repo = MockProjectRepository::new();
@@ -816,20 +1047,44 @@ mod tests {
                     Box::pin(async move { Ok(t) })
                 });
         }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let art = triage_artifact.clone();
+            artifact_repo.expect_list().returning(move |_, _, _| {
+                let a = art.clone();
+                Box::pin(async move { Ok(vec![a]) })
+            });
+        }
+        artifact_repo.expect_create().returning(|_, _| {
+            Box::pin(async move {
+                Ok(IssueArtifact {
+                    id: 999,
+                    token: ArtifactToken::new(999),
+                    issue_id: 10,
+                    kind: ArtifactKind::StatusTransition,
+                    body: serde_json::json!({}),
+                    created_by: "system".into(),
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                })
+            })
+        });
 
-        let core = make_core(project_repo, issue_repo);
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-1".to_string(),
                 new_status: "SpecNeeded".to_string(),
+                reason: None,
             }))
             .await;
 
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(json["status"], "SpecNeeded");
+        assert_eq!(json["issue"]["status"], "SpecNeeded");
+        assert!(json["completeness"].is_object());
     }
 
     #[tokio::test]
@@ -845,6 +1100,7 @@ mod tests {
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-999".to_string(),
                 new_status: "SpecNeeded".to_string(),
+                reason: None,
             }))
             .await;
 
@@ -863,6 +1119,7 @@ mod tests {
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-1".to_string(),
                 new_status: "NotAStatus".to_string(),
+                reason: None,
             }))
             .await;
 
@@ -949,5 +1206,408 @@ mod tests {
         let result = server.read_resource_inner("issueboss://unknown").await;
 
         assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // add_artifact
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn add_artifact_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
+        let issue = fake_issue(10, 1, 1);
+        let artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::Comment,
+            body: serde_json::json!({"text": "hello"}),
+            created_by: "U_1".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let a = artifact.clone();
+            artifact_repo.expect_create().returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(a) })
+            });
+        }
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .add_artifact(Parameters(AddArtifactParams {
+                slug: "TP-1".to_string(),
+                kind: "Comment".to_string(),
+                body: serde_json::json!({"text": "hello"}),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["kind"], "Comment");
+    }
+
+    #[tokio::test]
+    async fn add_artifact_issue_not_found() {
+        use ib_core::artifact::MockArtifactRepository;
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .add_artifact(Parameters(AddArtifactParams {
+                slug: "TP-999".to_string(),
+                kind: "Comment".to_string(),
+                body: serde_json::json!({"text": "hello"}),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn add_artifact_invalid_kind() {
+        use ib_core::artifact::MockArtifactRepository;
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .add_artifact(Parameters(AddArtifactParams {
+                slug: "TP-1".to_string(),
+                kind: "NotAKind".to_string(),
+                body: serde_json::json!({}),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // update_artifact
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn update_artifact_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
+        let original = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::Comment,
+            body: serde_json::json!({"text": "old"}),
+            created_by: "U_1".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let token_str = original.token.to_string();
+        let updated = IssueArtifact {
+            body: serde_json::json!({"text": "updated"}),
+            ..original.clone()
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let a = original.clone();
+            artifact_repo.expect_find_by_token().returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(Some(a)) })
+            });
+        }
+        {
+            let u = updated.clone();
+            artifact_repo.expect_update().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(u) })
+            });
+        }
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .update_artifact(Parameters(UpdateArtifactParams {
+                artifact_token: token_str,
+                body: serde_json::json!({"text": "updated"}),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["body"]["text"], "updated");
+    }
+
+    #[tokio::test]
+    async fn update_artifact_invalid_token() {
+        use ib_core::artifact::MockArtifactRepository;
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .update_artifact(Parameters(UpdateArtifactParams {
+                artifact_token: "not-a-valid-token".to_string(),
+                body: serde_json::json!({"text": "x"}),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // remove_artifact
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn remove_artifact_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
+        let artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::Comment,
+            body: serde_json::json!({"text": "hello"}),
+            created_by: "U_1".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let token_str = artifact.token.to_string();
+
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let a = artifact.clone();
+            artifact_repo.expect_find_by_token().returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(Some(a)) })
+            });
+        }
+        artifact_repo.expect_delete().returning(|_, _| Box::pin(async { Ok(()) }));
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server.remove_artifact(Parameters(RemoveArtifactParams { artifact_token: token_str })).await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["ok"], true);
+    }
+
+    #[tokio::test]
+    async fn remove_artifact_invalid_token() {
+        use ib_core::artifact::MockArtifactRepository;
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .remove_artifact(Parameters(RemoveArtifactParams {
+                artifact_token: "bad-token".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // list_artifacts
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn list_artifacts_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
+        let issue = fake_issue(10, 1, 1);
+        let artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::Comment,
+            body: serde_json::json!({"text": "hello"}),
+            created_by: "U_1".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let a = artifact.clone();
+            artifact_repo.expect_list().returning(move |_, _, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(vec![a]) })
+            });
+        }
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_artifacts(Parameters(ListArtifactsParams {
+                slug: "TP-1".to_string(),
+                kinds: None,
+                uncovered_only: false,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json.as_array().unwrap().len(), 1);
+        assert_eq!(json[0]["kind"], "Comment");
+    }
+
+    #[tokio::test]
+    async fn list_artifacts_issue_not_found() {
+        use ib_core::artifact::MockArtifactRepository;
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_artifacts(Parameters(ListArtifactsParams {
+                slug: "TP-999".to_string(),
+                kinds: None,
+                uncovered_only: false,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_artifacts_invalid_kind() {
+        use ib_core::artifact::MockArtifactRepository;
+        let issue = fake_issue(10, 1, 1);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_artifacts(Parameters(ListArtifactsParams {
+                slug: "TP-1".to_string(),
+                kinds: Some(vec!["NotAKind".to_string()]),
+                uncovered_only: false,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // transition_issue — gate failure (tests GateFailure → map_core_err path)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn transition_issue_gate_failure() {
+        use ib_core::artifact::MockArtifactRepository;
+        // Issue is in Triage; transitioning to SpecNeeded requires a TriageResult
+        // artifact. With no artifacts, the gate fails and map_core_err must
+        // encode a gate_failed payload.
+        let issue = fake_issue(10, 1, 1);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        // Return empty list → no TriageResult → gate fails
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .transition_issue(Parameters(TransitionIssueParams {
+                slug: "TP-1".to_string(),
+                new_status: "SpecNeeded".to_string(),
+                reason: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        // The error message from map_core_err contains the gate_failed JSON payload
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("gate_failed"),
+            "expected gate_failed in error message, got: {}",
+            err.message
+        );
     }
 }

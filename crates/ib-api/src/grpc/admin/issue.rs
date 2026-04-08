@@ -74,7 +74,7 @@ pub(crate) mod handler {
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
-        let updated = core.issue_service().transition_issue(issue.token, new_status).await?;
+        let updated = core.issue_service().transition_issue(issue.token, new_status, None).await?;
         Ok(issue_to_proto(updated, &project_slug))
     }
 
@@ -361,12 +361,26 @@ mod tests {
 
     #[tokio::test]
     async fn transition_issue_success() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
         let project = fake_project(1, "myapp", "MA");
         let issue_before = fake_issue(100, 1, 1); // status: Triage
         let issue_after = {
             let mut i = issue_before.clone();
             i.status = IssueStatus::SpecNeeded;
             i
+        };
+        let triage_artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 100,
+            kind: ArtifactKind::TriageResult,
+            body: serde_json::json!({"path": "insights/triage/tp-1.md"}),
+            created_by: "U_test".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         };
         let mut project_repo = MockProjectRepository::new();
         {
@@ -410,6 +424,28 @@ mod tests {
                     Box::pin(async move { Ok(i) })
                 });
         }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let art = triage_artifact.clone();
+            artifact_repo.expect_list().returning(move |_, _, _| {
+                let a = art.clone();
+                Box::pin(async move { Ok(vec![a]) })
+            });
+        }
+        artifact_repo.expect_create().returning(|_, _| {
+            Box::pin(async move {
+                Ok(IssueArtifact {
+                    id: 999,
+                    token: ArtifactToken::new(999),
+                    issue_id: 100,
+                    kind: ArtifactKind::StatusTransition,
+                    body: serde_json::json!({}),
+                    created_by: "system".into(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+            })
+        });
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
@@ -417,6 +453,7 @@ mod tests {
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
+                .artifact_repository(std::sync::Arc::new(artifact_repo))
                 .build()
                 .unwrap(),
         );

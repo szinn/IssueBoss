@@ -1,4 +1,5 @@
 pub mod api_key;
+pub mod artifact;
 pub mod error;
 pub mod issue;
 pub mod project;
@@ -12,6 +13,7 @@ pub use error::{Error, ErrorKind, RepositoryError};
 
 use crate::{
     api_key::{ApiKeyService, service::ApiKeyServiceImpl},
+    artifact::{ArtifactService, service::ArtifactServiceImpl},
     issue::{IssueService, service::IssueServiceImpl},
     project::{ProjectService, service::ProjectServiceImpl},
     repository::RepositoryService,
@@ -23,6 +25,7 @@ pub struct CoreServices {
     api_key_service: Arc<dyn ApiKeyService>,
     project_service: Arc<dyn ProjectService>,
     issue_service: Arc<dyn IssueService>,
+    artifact_service: Arc<dyn ArtifactService>,
 }
 
 impl CoreServices {
@@ -31,11 +34,13 @@ impl CoreServices {
         let api_key_service = Arc::new(ApiKeyServiceImpl::new(repository_service.clone()));
         let project_service = Arc::new(ProjectServiceImpl::new(repository_service.clone()));
         let issue_service = Arc::new(IssueServiceImpl::new(repository_service.clone()));
+        let artifact_service = Arc::new(ArtifactServiceImpl::new(repository_service.clone()));
         Self {
             user_service,
             api_key_service,
             project_service,
             issue_service,
+            artifact_service,
         }
     }
 
@@ -57,6 +62,11 @@ impl CoreServices {
     #[must_use]
     pub fn issue_service(&self) -> &Arc<dyn IssueService> {
         &self.issue_service
+    }
+
+    #[must_use]
+    pub fn artifact_service(&self) -> &Arc<dyn ArtifactService> {
+        &self.artifact_service
     }
 }
 

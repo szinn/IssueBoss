@@ -13,6 +13,7 @@ mod transaction;
 use ib_core::{
     Error,
     api_key::ApiKeyRepository,
+    artifact::ArtifactRepository,
     issue::IssueRepository,
     project::{ProjectMemberRepository, ProjectRepository},
     repository::{Repository, RepositoryService, RepositoryServiceBuilder},
@@ -22,7 +23,10 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 
 use crate::{
-    adapters::{ApiKeyRepositoryAdapter, IssueRepositoryAdapter, ProjectMemberRepositoryAdapter, ProjectRepositoryAdapter, UserRepositoryAdapter},
+    adapters::{
+        ApiKeyRepositoryAdapter, ArtifactRepositoryAdapter, IssueRepositoryAdapter, ProjectMemberRepositoryAdapter, ProjectRepositoryAdapter,
+        UserRepositoryAdapter,
+    },
     migrations::Migrator,
     repository::RepositoryImpl,
 };
@@ -50,6 +54,7 @@ pub async fn create_repository_service(database: DatabaseConnection) -> Result<A
         .project_repository(Arc::new(ProjectRepositoryAdapter::new()) as Arc<dyn ProjectRepository>)
         .project_member_repository(Arc::new(ProjectMemberRepositoryAdapter::new()) as Arc<dyn ProjectMemberRepository>)
         .issue_repository(Arc::new(IssueRepositoryAdapter::new()) as Arc<dyn IssueRepository>)
+        .artifact_repository(Arc::new(ArtifactRepositoryAdapter::new()) as Arc<dyn ArtifactRepository>)
         .build()
         .map_err(|e| Error::Infrastructure(e.to_string()))?;
 

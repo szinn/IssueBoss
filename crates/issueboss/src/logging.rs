@@ -38,7 +38,7 @@ pub(crate) fn init_logging() -> Result<()> {
 
     let subscriber = Registry::default().with(env_filter).with(formatting_layer);
 
-    set_global_default(subscriber).context("Failed to set tracing subscriber xxx")?;
+    set_global_default(subscriber).context("Failed to set tracing subscriber")?;
 
     Ok(())
 }

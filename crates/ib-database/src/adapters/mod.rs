@@ -1,4 +1,6 @@
 pub(crate) mod api_key;
+pub(crate) mod artifact;
+pub(crate) use artifact::ArtifactRepositoryAdapter;
 pub(crate) mod issue;
 pub(crate) mod project;
 pub(crate) mod project_member;

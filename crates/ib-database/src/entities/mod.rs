@@ -1,4 +1,5 @@
 pub(crate) mod api_keys;
+pub(crate) mod issue_artifacts;
 pub(crate) mod issues;
 pub(crate) mod prelude;
 pub(crate) mod project_members;
