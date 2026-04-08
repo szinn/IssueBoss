@@ -11,7 +11,7 @@ Use IssueBoss MCP to track work. list_issues with project_slug "ib".
 
 Pipeline order for transitions:
 Triage → SpecNeeded → ResearchNeeded → ResearchInProgress → ResearchInReview
-→ ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InProgress
+→ ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InDev
 → CodeReview → Done
 
 ## Version Control
