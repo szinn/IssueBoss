@@ -263,6 +263,10 @@ impl IssueStatus {
         if matches!(self, Self::Backlog) {
             return next.pipeline_index().is_some();
         }
+        // Triage can skip directly to ReadyForPlan (no spec/research needed)
+        if matches!(self, Self::Triage) && matches!(next, Self::ReadyForPlan) {
+            return true;
+        }
         // Both in the pipeline: adjacent-forward or any-backward
         match (self.pipeline_index(), next.pipeline_index()) {
             (Some(from), Some(to)) => to == from + 1 || to < from,
@@ -465,8 +469,14 @@ mod tests {
     }
 
     #[test]
+    fn triage_can_skip_to_ready_for_plan() {
+        assert!(IssueStatus::Triage.can_transition_to(&IssueStatus::ReadyForPlan));
+    }
+
+    #[test]
     fn forward_skip_moves_are_denied() {
         assert!(!IssueStatus::Triage.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(!IssueStatus::Triage.can_transition_to(&IssueStatus::PlanInProgress));
         assert!(!IssueStatus::ReadyForDev.can_transition_to(&IssueStatus::CodeReview));
         assert!(!IssueStatus::PlanInProgress.can_transition_to(&IssueStatus::ReadyForDev));
     }
