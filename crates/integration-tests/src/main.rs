@@ -1,3 +1,4 @@
+mod artifact;
 mod context;
 mod fixtures;
 mod issue;

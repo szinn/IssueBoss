@@ -3000,6 +3000,7 @@ dependencies = [
  "ib-core",
  "ib-database",
  "sea-orm",
+ "serde_json",
  "testcontainers",
  "testcontainers-modules",
  "tokio",

@@ -27,6 +27,7 @@ ib-database.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 sea-orm.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [dependencies.testcontainers]
