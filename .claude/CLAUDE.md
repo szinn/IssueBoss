@@ -1,5 +1,19 @@
 # IssueBoss: Take Control Of Your Project Issues
 
+## Issue Management
+
+You have access to an IssueBoss MCP server for project issue tracking.
+
+## IssueBoss
+
+Default project slug: `ib`
+Use IssueBoss MCP to track work. list_issues with project_slug "ib".
+
+Pipeline order for transitions:
+Triage → SpecNeeded → ResearchNeeded → ResearchInProgress → ResearchInReview
+→ ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InProgress
+→ CodeReview → Done
+
 ## Version Control
 
 This is a **jj (jujutsu) repo**. Never use git commands (including `git worktree`).
