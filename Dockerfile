@@ -62,7 +62,7 @@ RUN /usr/local/cargo/bin/dx bundle --server --package issueboss --release --targ
 # Sanity check: should say "not a dynamic executable"
 RUN ldd target/dx/issueboss/release/web/issueboss || true
 
-FROM ubuntu:latest@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c AS certs
+FROM ubuntu:latest@sha256:84e77dee7d1bc93fb029a45e3c6cb9d8aa4831ccfcc7103d36e876938d28895b AS certs
 RUN groupadd --gid 1234 issueboss && useradd -g 1234 -M -u 1234 -s /usr/sbin/nologin issueboss
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN update-ca-certificates
