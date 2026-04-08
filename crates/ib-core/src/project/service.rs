@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::model::{NewProject, NewProjectMember, Project, ProjectId, ProjectMember, ProjectToken};
-use crate::{Error, RepositoryError, repository::RepositoryService, user::UserId, with_read_only_transaction, with_transaction};
+use crate::{Error, RepositoryError, repository::RepositoryService, types::Capabilities, user::UserId, with_read_only_transaction, with_transaction};
 
 #[async_trait::async_trait]
 pub trait ProjectService: Send + Sync {
@@ -21,6 +21,10 @@ pub trait ProjectService: Send + Sync {
     async fn remove_member(&self, project_id: ProjectId, user_id: UserId) -> Result<(), Error>;
     async fn list_members(&self, project_id: ProjectId) -> Result<Vec<ProjectMember>, Error>;
     async fn find_member(&self, project_id: ProjectId, user_id: UserId) -> Result<Option<ProjectMember>, Error>;
+    /// Returns the merged capabilities for a user on a project: the user's
+    /// own capabilities unioned with any capabilities granted via membership.
+    /// Returns `NotFound` if the user or the project membership does not exist.
+    async fn capabilities_for_user(&self, project_id: ProjectId, user_id: UserId) -> Result<Capabilities, Error>;
 }
 
 pub(crate) struct ProjectServiceImpl {
@@ -107,6 +111,20 @@ impl ProjectService for ProjectServiceImpl {
             project_member_repository.find(tx, project_id, user_id).await
         })
     }
+
+    async fn capabilities_for_user(&self, project_id: ProjectId, user_id: UserId) -> Result<Capabilities, Error> {
+        with_read_only_transaction!(self, user_repository, project_member_repository, |tx| {
+            let user = user_repository
+                .find_by_id(tx, user_id)
+                .await?
+                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+            let member = project_member_repository
+                .find(tx, project_id, user_id)
+                .await?
+                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+            Ok(user.capabilities.merge(&member.capabilities))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -124,8 +142,8 @@ mod tests {
             repository::{MockProjectMemberRepository, MockProjectRepository},
         },
         repository::testing::default_repository_service_builder,
-        types::Capabilities,
-        user::UserId,
+        types::{Capabilities, Capability},
+        user::{MockUserRepository, User, UserId, UserToken},
     };
 
     fn make_svc(project_repo: MockProjectRepository, member_repo: MockProjectMemberRepository) -> ProjectServiceImpl {
@@ -137,6 +155,35 @@ mod tests {
                 .unwrap(),
         );
         ProjectServiceImpl::new(repo_svc)
+    }
+
+    fn make_svc_with_users(user_repo: MockUserRepository, project_repo: MockProjectRepository, member_repo: MockProjectMemberRepository) -> ProjectServiceImpl {
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .project_repository(Arc::new(project_repo))
+                .project_member_repository(Arc::new(member_repo))
+                .build()
+                .unwrap(),
+        );
+        ProjectServiceImpl::new(repo_svc)
+    }
+
+    fn fake_user(id: UserId, caps: Capabilities) -> User {
+        let now = Utc::now();
+        User {
+            id,
+            token: UserToken::new(id),
+            username: format!("user{id}"),
+            full_name: format!("User {id}"),
+            password_hash: "hash".to_string(),
+            email_address: format!("user{id}@example.com"),
+            capabilities: caps,
+            change_password_on_login: false,
+            version: 0,
+            created_at: now,
+            updated_at: now,
+        }
     }
 
     fn fake_project(id: ProjectId, slug: &str) -> Project {
@@ -280,5 +327,96 @@ mod tests {
         let svc = make_svc(repo, MockProjectMemberRepository::new());
         let result = svc.list_for_user(42).await.unwrap();
         assert_eq!(result.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn capabilities_for_user_merges_user_and_member_capabilities() {
+        let user = fake_user(1, Capabilities(vec![Capability::Admin]));
+        let mut member = fake_member(10, 1);
+        member.capabilities = Capabilities(vec![Capability::ViewIssues, Capability::CreateIssues]);
+
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let m = member.clone();
+            member_repo.expect_find().returning(move |_, _, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(Some(m)) })
+            });
+        }
+
+        let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), member_repo);
+        let caps = svc.capabilities_for_user(10, 1).await.unwrap();
+
+        assert!(caps.has(Capability::Admin));
+        assert!(caps.has(Capability::ViewIssues));
+        assert!(caps.has(Capability::CreateIssues));
+    }
+
+    #[tokio::test]
+    async fn capabilities_for_user_deduplicates_overlapping_capabilities() {
+        let user = fake_user(1, Capabilities(vec![Capability::ViewIssues]));
+        let mut member = fake_member(10, 1);
+        member.capabilities = Capabilities(vec![Capability::ViewIssues, Capability::UpdateIssues]);
+
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let m = member.clone();
+            member_repo.expect_find().returning(move |_, _, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(Some(m)) })
+            });
+        }
+
+        let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), member_repo);
+        let caps = svc.capabilities_for_user(10, 1).await.unwrap();
+
+        assert_eq!(caps.0.iter().filter(|&&c| c == Capability::ViewIssues).count(), 1);
+        assert!(caps.has(Capability::UpdateIssues));
+    }
+
+    #[tokio::test]
+    async fn capabilities_for_user_returns_not_found_when_user_missing() {
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), MockProjectMemberRepository::new());
+        let result = svc.capabilities_for_user(10, 999).await;
+        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
+    }
+
+    #[tokio::test]
+    async fn capabilities_for_user_returns_not_found_when_member_missing() {
+        let user = fake_user(1, Capabilities::default());
+
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), member_repo);
+        let result = svc.capabilities_for_user(10, 1).await;
+        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 }

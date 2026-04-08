@@ -33,6 +33,18 @@ impl Capabilities {
     pub fn is_super_admin(&self) -> bool {
         self.has(Capability::SuperAdmin)
     }
+
+    /// Returns a new `Capabilities` containing all capabilities from both sets,
+    /// with duplicates removed.
+    pub fn merge(&self, other: &Self) -> Self {
+        let mut combined = self.0.clone();
+        for cap in &other.0 {
+            if !combined.contains(cap) {
+                combined.push(*cap);
+            }
+        }
+        Self(combined)
+    }
 }
 
 #[cfg(test)]
@@ -53,5 +65,32 @@ mod tests {
         let caps = Capabilities(vec![Capability::SuperAdmin]);
         assert!(caps.has(Capability::SuperAdmin));
         assert!(!caps.has(Capability::Admin));
+    }
+
+    #[test]
+    fn capabilities_merge_combines_both_sets() {
+        let a = Capabilities(vec![Capability::Admin]);
+        let b = Capabilities(vec![Capability::ViewIssues, Capability::CreateIssues]);
+        let merged = a.merge(&b);
+        assert!(merged.has(Capability::Admin));
+        assert!(merged.has(Capability::ViewIssues));
+        assert!(merged.has(Capability::CreateIssues));
+    }
+
+    #[test]
+    fn capabilities_merge_deduplicates() {
+        let a = Capabilities(vec![Capability::ViewIssues]);
+        let b = Capabilities(vec![Capability::ViewIssues, Capability::UpdateIssues]);
+        let merged = a.merge(&b);
+        assert_eq!(merged.0.iter().filter(|&&c| c == Capability::ViewIssues).count(), 1);
+        assert!(merged.has(Capability::UpdateIssues));
+    }
+
+    #[test]
+    fn capabilities_merge_with_empty() {
+        let a = Capabilities(vec![Capability::Admin]);
+        let empty = Capabilities::default();
+        assert_eq!(a.merge(&empty).0, a.0);
+        assert_eq!(empty.merge(&a).0, a.0);
     }
 }
