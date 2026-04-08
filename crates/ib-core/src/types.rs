@@ -28,6 +28,7 @@ pub struct Capabilities(pub Vec<Capability>);
 impl Capabilities {
     pub fn has(&self, cap: Capability) -> bool {
         self.0.contains(&cap)
+            || (!matches!(cap, Capability::SuperAdmin | Capability::Admin) && (self.0.contains(&Capability::Admin) || self.0.contains(&Capability::SuperAdmin)))
     }
 
     pub fn is_super_admin(&self) -> bool {
@@ -64,6 +65,32 @@ mod tests {
     fn capabilities_has_works() {
         let caps = Capabilities(vec![Capability::SuperAdmin]);
         assert!(caps.has(Capability::SuperAdmin));
+        assert!(!caps.has(Capability::Admin));
+    }
+
+    #[test]
+    fn admin_grants_all_non_admin_capabilities() {
+        let caps = Capabilities(vec![Capability::Admin]);
+        assert!(caps.has(Capability::ViewIssues));
+        assert!(caps.has(Capability::CreateIssues));
+        assert!(caps.has(Capability::UpdateIssues));
+        assert!(caps.has(Capability::TransitionStatus));
+        assert!(caps.has(Capability::ManageLabels));
+        assert!(caps.has(Capability::ManageMembers));
+        // Admin does not implicitly grant SuperAdmin
+        assert!(!caps.has(Capability::SuperAdmin));
+    }
+
+    #[test]
+    fn super_admin_grants_all_non_admin_capabilities() {
+        let caps = Capabilities(vec![Capability::SuperAdmin]);
+        assert!(caps.has(Capability::ViewIssues));
+        assert!(caps.has(Capability::CreateIssues));
+        assert!(caps.has(Capability::UpdateIssues));
+        assert!(caps.has(Capability::TransitionStatus));
+        assert!(caps.has(Capability::ManageLabels));
+        assert!(caps.has(Capability::ManageMembers));
+        // SuperAdmin does not implicitly grant Admin
         assert!(!caps.has(Capability::Admin));
     }
 
