@@ -20,6 +20,7 @@ impl MigrationTrait for Migration {
                     .col(string(IssueArtifacts::Kind).not_null())
                     .col(text(IssueArtifacts::Body).not_null())
                     .col(string(IssueArtifacts::CreatedBy).not_null())
+                    .col(string(IssueArtifacts::Slug).null())
                     .col(timestamp_with_time_zone(IssueArtifacts::CreatedAt))
                     .col(timestamp_with_time_zone(IssueArtifacts::UpdatedAt))
                     .foreign_key(
@@ -41,6 +42,18 @@ impl MigrationTrait for Migration {
                     .col(IssueArtifacts::IssueId)
                     .to_owned(),
             )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_issue_artifacts_issue_id_slug")
+                    .table(IssueArtifacts::Table)
+                    .col(IssueArtifacts::IssueId)
+                    .col(IssueArtifacts::Slug)
+                    .unique()
+                    .to_owned(),
+            )
             .await
     }
 
@@ -57,6 +70,7 @@ enum IssueArtifacts {
     IssueId,
     Kind,
     Body,
+    Slug,
     CreatedBy,
     CreatedAt,
     UpdatedAt,
