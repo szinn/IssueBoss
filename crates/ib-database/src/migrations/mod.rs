@@ -6,6 +6,7 @@ mod m20260407_000003_create_projects;
 mod m20260407_000004_create_project_members;
 mod m20260407_000005_create_issues;
 mod m20260408_000006_create_issue_artifacts;
+mod m20260409_000007_add_artifact_slug;
 
 pub(crate) struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260407_000004_create_project_members::Migration),
             Box::new(m20260407_000005_create_issues::Migration),
             Box::new(m20260408_000006_create_issue_artifacts::Migration),
+            Box::new(m20260409_000007_add_artifact_slug::Migration),
         ]
     }
 }
