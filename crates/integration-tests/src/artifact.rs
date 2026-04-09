@@ -1,5 +1,5 @@
 use ib_core::{
-    Error,
+    Error, RepositoryError,
     artifact::{ArtifactKind, NewArtifact},
     issue::IssueStatus,
 };
@@ -19,7 +19,7 @@ async fn artifact_lifecycle() {
     let err = ctx.services.issue_service().transition_issue(issue.token, IssueStatus::SpecNeeded, None).await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
 
-    // Add TriageResult — gate passes
+    // Add TriageResult — gate passes (slug auto-assigned by service)
     let _triage = ctx
         .services
         .artifact_service()
@@ -32,6 +32,7 @@ async fn artifact_lifecycle() {
         })
         .await
         .unwrap();
+    assert_eq!(_triage.slug, Some("triage".to_string()));
 
     let issue = ctx
         .services
@@ -69,19 +70,20 @@ async fn artifact_lifecycle() {
         .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "no_research_topics"));
 
-    // Add a topic
+    // Add a topic with explicit slug
     let topic = ctx
         .services
         .artifact_service()
         .add_artifact(NewArtifact {
             issue_id: issue.id,
             kind: ArtifactKind::ResearchTopic,
-            slug: None,
+            slug: Some("investigate-auth-flow".into()),
             body: serde_json::json!({"description": "Investigate auth flow"}),
             created_by: "U_test".into(),
         })
         .await
         .unwrap();
+    assert_eq!(topic.slug, Some("investigate-auth-flow".to_string()));
 
     let issue = ctx
         .services
@@ -98,13 +100,13 @@ async fn artifact_lifecycle() {
         .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
 
-    // Cover the topic
+    // Cover the topic with explicit slug
     ctx.services
         .artifact_service()
         .add_artifact(NewArtifact {
             issue_id: issue.id,
             kind: ArtifactKind::Research,
-            slug: None,
+            slug: Some("auth-flow-research".into()),
             body: serde_json::json!({
                 "topic_token": topic.token.to_string(),
                 "status": "completed",
@@ -132,4 +134,98 @@ async fn artifact_lifecycle() {
         .await
         .unwrap();
     assert_eq!(issue.status, IssueStatus::ResearchInReview);
+}
+
+#[tokio::test]
+async fn artifact_slug_update() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Slug Update", "slug-update", "SU").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "SU", "Update test").await;
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Comment,
+            slug: Some("initial-note".into()),
+            body: serde_json::json!({"text": "original text"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    let updated = ctx
+        .services
+        .artifact_service()
+        .update_artifact(issue.id, "initial-note", serde_json::json!({"text": "revised text"}))
+        .await
+        .unwrap();
+
+    assert_eq!(updated.body["text"], "revised text");
+    assert_eq!(updated.slug, Some("initial-note".to_string()));
+}
+
+#[tokio::test]
+async fn artifact_slug_remove() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Slug Remove", "slug-remove", "SR").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "SR", "Remove test").await;
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Comment,
+            slug: Some("to-remove".into()),
+            body: serde_json::json!({"text": "remove me"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    ctx.services
+        .artifact_service()
+        .remove_artifact(issue.id, "to-remove")
+        .await
+        .unwrap();
+
+    let result = ctx
+        .services
+        .artifact_service()
+        .update_artifact(issue.id, "to-remove", serde_json::json!({"text": "ghost"}))
+        .await;
+    assert!(matches!(result, Err(ib_core::Error::RepositoryError(RepositoryError::NotFound))));
+}
+
+#[tokio::test]
+async fn artifact_slug_uniqueness_enforced() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Slug Unique", "slug-unique", "SL").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "SL", "Uniqueness test").await;
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Comment,
+            slug: Some("dupe-slug".into()),
+            body: serde_json::json!({"text": "first"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    let result = ctx
+        .services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Comment,
+            slug: Some("dupe-slug".into()),
+            body: serde_json::json!({"text": "second"}),
+            created_by: "U_test".into(),
+        })
+        .await;
+
+    assert!(result.is_err());
 }
