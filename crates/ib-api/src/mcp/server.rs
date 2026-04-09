@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ib_core::{
     CoreServices,
-    artifact::{ArtifactKind, ArtifactToken, IssueArtifact, NewArtifact},
+    artifact::{ArtifactKind, IssueArtifact, NewArtifact},
     issue::{IssueFilter, IssuePriority, IssueSize, IssueStatus, NewIssue},
     project::Project,
     user::User,
@@ -169,22 +169,31 @@ struct AddArtifactParams {
     /// Artifact kind: TriageResult, Spec, Research, Plan, ResearchTopic,
     /// Comment
     kind: String,
+    /// Artifact slug for multi-instance kinds (ResearchTopic, Research,
+    /// Comment). Lowercase letters, digits, and hyphens only. Not required
+    /// for singleton kinds (TriageResult, Spec, Plan) — those are
+    /// auto-assigned.
+    artifact_slug: Option<String>,
     /// JSON body — schema depends on kind (see artifact lifecycle design)
     body: serde_json::Value,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct UpdateArtifactParams {
-    /// Artifact token, e.g. "A_xxx"
-    artifact_token: String,
+    /// Issue slug, e.g. "IB-42"
+    issue_slug: String,
+    /// Artifact slug, e.g. "triage" or "my-comment"
+    artifact_slug: String,
     /// Updated JSON body
     body: serde_json::Value,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct RemoveArtifactParams {
-    /// Artifact token, e.g. "A_xxx"
-    artifact_token: String,
+    /// Issue slug, e.g. "IB-42"
+    issue_slug: String,
+    /// Artifact slug, e.g. "triage" or "my-comment"
+    artifact_slug: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -451,6 +460,7 @@ impl IssueBossServer {
             .add_artifact(NewArtifact {
                 issue_id: issue.id,
                 kind,
+                slug: p.artifact_slug,
                 body: p.body,
                 created_by: self.user.token.to_string(),
             })
@@ -462,22 +472,37 @@ impl IssueBossServer {
     #[tool(description = "Update an artifact's body. StatusTransition artifacts and file path fields are immutable.")]
     async fn update_artifact(&self, params: Parameters<UpdateArtifactParams>) -> Result<String, McpError> {
         let p = params.0;
-        let token = p
-            .artifact_token
-            .parse::<ArtifactToken>()
-            .map_err(|_| McpError::invalid_params(format!("invalid artifact token: {}", p.artifact_token), None))?;
-        let artifact = self.core.artifact_service().update_artifact(token, p.body).await.map_err(map_core_err)?;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.issue_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        let artifact = self
+            .core
+            .artifact_service()
+            .update_artifact(issue.id, &p.artifact_slug, p.body)
+            .await
+            .map_err(map_core_err)?;
         serialize(&ArtifactMcp::from_artifact(artifact))
     }
 
     #[tool(description = "Remove an artifact. For ResearchTopics, prefer adding a Research artifact with status 'cancelled' instead of removing.")]
     async fn remove_artifact(&self, params: Parameters<RemoveArtifactParams>) -> Result<String, McpError> {
         let p = params.0;
-        let token = p
-            .artifact_token
-            .parse::<ArtifactToken>()
-            .map_err(|_| McpError::invalid_params(format!("invalid artifact token: {}", p.artifact_token), None))?;
-        self.core.artifact_service().remove_artifact(token).await.map_err(map_core_err)?;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.issue_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.core
+            .artifact_service()
+            .remove_artifact(issue.id, &p.artifact_slug)
+            .await
+            .map_err(map_core_err)?;
         serialize(&serde_json::json!({"ok": true}))
     }
 
@@ -1015,6 +1040,7 @@ mod tests {
             token: ArtifactToken::new(1),
             issue_id: 10,
             kind: ArtifactKind::TriageResult,
+            slug: None,
             body: serde_json::json!({"path": "insights/triage/tp-1.md"}),
             created_by: "U_test".into(),
             created_at: Utc::now(),
@@ -1062,6 +1088,7 @@ mod tests {
                     token: ArtifactToken::new(999),
                     issue_id: 10,
                     kind: ArtifactKind::StatusTransition,
+                    slug: None,
                     body: serde_json::json!({}),
                     created_by: "system".into(),
                     created_at: Utc::now(),
@@ -1224,6 +1251,7 @@ mod tests {
             token: ArtifactToken::new(1),
             issue_id: 10,
             kind: ArtifactKind::Comment,
+            slug: None,
             body: serde_json::json!({"text": "hello"}),
             created_by: "U_1".to_string(),
             created_at: Utc::now(),
@@ -1255,6 +1283,7 @@ mod tests {
             .add_artifact(Parameters(AddArtifactParams {
                 slug: "TP-1".to_string(),
                 kind: "Comment".to_string(),
+                artifact_slug: Some("my-comment".to_string()),
                 body: serde_json::json!({"text": "hello"}),
             }))
             .await;
@@ -1279,6 +1308,7 @@ mod tests {
             .add_artifact(Parameters(AddArtifactParams {
                 slug: "TP-999".to_string(),
                 kind: "Comment".to_string(),
+                artifact_slug: None,
                 body: serde_json::json!({"text": "hello"}),
             }))
             .await;
@@ -1300,6 +1330,7 @@ mod tests {
             .add_artifact(Parameters(AddArtifactParams {
                 slug: "TP-1".to_string(),
                 kind: "NotAKind".to_string(),
+                artifact_slug: None,
                 body: serde_json::json!({}),
             }))
             .await;
@@ -1317,28 +1348,36 @@ mod tests {
             MockArtifactRepository,
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         };
+        let issue = fake_issue(10, 1, 1);
         let original = IssueArtifact {
             id: 1,
             token: ArtifactToken::new(1),
             issue_id: 10,
             kind: ArtifactKind::Comment,
+            slug: Some("my-comment".to_string()),
             body: serde_json::json!({"text": "old"}),
             created_by: "U_1".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let token_str = original.token.to_string();
         let updated = IssueArtifact {
             body: serde_json::json!({"text": "updated"}),
             ..original.clone()
         };
 
         let project_repo = MockProjectRepository::new();
-        let issue_repo = MockIssueRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = original.clone();
-            artifact_repo.expect_find_by_token().returning(move |_, _| {
+            artifact_repo.expect_find_by_slug().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(Some(a)) })
             });
@@ -1356,7 +1395,8 @@ mod tests {
 
         let result = server
             .update_artifact(Parameters(UpdateArtifactParams {
-                artifact_token: token_str,
+                issue_slug: issue.slug.clone(),
+                artifact_slug: "my-comment".to_string(),
                 body: serde_json::json!({"text": "updated"}),
             }))
             .await;
@@ -1367,10 +1407,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_artifact_invalid_token() {
+    async fn update_artifact_issue_not_found() {
         use ib_core::artifact::MockArtifactRepository;
         let project_repo = MockProjectRepository::new();
-        let issue_repo = MockIssueRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
         let artifact_repo = MockArtifactRepository::new();
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -1378,7 +1419,8 @@ mod tests {
 
         let result = server
             .update_artifact(Parameters(UpdateArtifactParams {
-                artifact_token: "not-a-valid-token".to_string(),
+                issue_slug: "NOTEXIST-1".to_string(),
+                artifact_slug: "triage".to_string(),
                 body: serde_json::json!({"text": "x"}),
             }))
             .await;
@@ -1396,24 +1438,32 @@ mod tests {
             MockArtifactRepository,
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         };
+        let issue = fake_issue(10, 1, 1);
         let artifact = IssueArtifact {
             id: 1,
             token: ArtifactToken::new(1),
             issue_id: 10,
             kind: ArtifactKind::Comment,
+            slug: Some("my-comment".to_string()),
             body: serde_json::json!({"text": "hello"}),
             created_by: "U_1".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let token_str = artifact.token.to_string();
 
         let project_repo = MockProjectRepository::new();
-        let issue_repo = MockIssueRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
-            artifact_repo.expect_find_by_token().returning(move |_, _| {
+            artifact_repo.expect_find_by_slug().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(Some(a)) })
             });
@@ -1423,7 +1473,12 @@ mod tests {
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
         let server = IssueBossServer::new(core, fake_user(1));
 
-        let result = server.remove_artifact(Parameters(RemoveArtifactParams { artifact_token: token_str })).await;
+        let result = server
+            .remove_artifact(Parameters(RemoveArtifactParams {
+                issue_slug: issue.slug.clone(),
+                artifact_slug: "my-comment".to_string(),
+            }))
+            .await;
 
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
@@ -1431,10 +1486,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_artifact_invalid_token() {
+    async fn remove_artifact_issue_not_found() {
         use ib_core::artifact::MockArtifactRepository;
         let project_repo = MockProjectRepository::new();
-        let issue_repo = MockIssueRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo.expect_find_by_slug().returning(|_, _| Box::pin(async { Ok(None) }));
         let artifact_repo = MockArtifactRepository::new();
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -1442,7 +1498,8 @@ mod tests {
 
         let result = server
             .remove_artifact(Parameters(RemoveArtifactParams {
-                artifact_token: "bad-token".to_string(),
+                issue_slug: "NOTEXIST-1".to_string(),
+                artifact_slug: "triage".to_string(),
             }))
             .await;
 
@@ -1465,6 +1522,7 @@ mod tests {
             token: ArtifactToken::new(1),
             issue_id: 10,
             kind: ArtifactKind::Comment,
+            slug: None,
             body: serde_json::json!({"text": "hello"}),
             created_by: "U_1".to_string(),
             created_at: Utc::now(),

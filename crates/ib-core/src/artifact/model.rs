@@ -59,6 +59,7 @@ pub struct IssueArtifact {
     pub token: ArtifactToken,
     pub issue_id: IssueId,
     pub kind: ArtifactKind,
+    pub slug: Option<String>,
     pub body: serde_json::Value,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
@@ -69,6 +70,7 @@ pub struct IssueArtifact {
 pub struct NewArtifact {
     pub issue_id: IssueId,
     pub kind: ArtifactKind,
+    pub slug: Option<String>,
     pub body: serde_json::Value,
     pub created_by: String,
 }

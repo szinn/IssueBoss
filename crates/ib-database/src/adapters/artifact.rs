@@ -30,6 +30,7 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
         let model = issue_artifacts::ActiveModel {
             issue_id: Set(record.issue_id as i64),
             kind: Set(record.kind.to_string()),
+            slug: Set(record.slug),
             body: Set(record.body.to_string()),
             created_by: Set(record.created_by),
             ..issue_artifacts::ActiveModel::new()
@@ -57,6 +58,17 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
             .map(Into::into))
     }
 
+    async fn find_by_slug(&self, transaction: &dyn Transaction, issue_id: IssueId, slug: &str) -> Result<Option<IssueArtifact>, Error> {
+        let db = TransactionImpl::get_db_transaction(transaction)?;
+        Ok(prelude::IssueArtifacts::find()
+            .filter(issue_artifacts::Column::IssueId.eq(issue_id as i64))
+            .filter(issue_artifacts::Column::Slug.eq(slug))
+            .one(db)
+            .await
+            .map_err(handle_dberr)?
+            .map(Into::into))
+    }
+
     async fn list(&self, transaction: &dyn Transaction, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>) -> Result<Vec<IssueArtifact>, Error> {
         let db = TransactionImpl::get_db_transaction(transaction)?;
         let mut query = prelude::IssueArtifacts::find().filter(issue_artifacts::Column::IssueId.eq(issue_id as i64));
@@ -74,6 +86,7 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
             token: Set(artifact.token.to_string()),
             issue_id: Set(artifact.issue_id as i64),
             kind: Set(artifact.kind.to_string()),
+            slug: Set(artifact.slug),
             body: Set(artifact.body.to_string()),
             created_by: Set(artifact.created_by),
             created_at: Set(artifact.created_at.into()),

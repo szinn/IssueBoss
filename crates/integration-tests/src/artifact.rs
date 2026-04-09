@@ -26,6 +26,7 @@ async fn artifact_lifecycle() {
         .add_artifact(NewArtifact {
             issue_id: issue.id,
             kind: ArtifactKind::TriageResult,
+            slug: None,
             body: serde_json::json!({"path": "insights/triage/art-1.md"}),
             created_by: "U_test".into(),
         })
@@ -75,6 +76,7 @@ async fn artifact_lifecycle() {
         .add_artifact(NewArtifact {
             issue_id: issue.id,
             kind: ArtifactKind::ResearchTopic,
+            slug: None,
             body: serde_json::json!({"description": "Investigate auth flow"}),
             created_by: "U_test".into(),
         })
@@ -102,6 +104,7 @@ async fn artifact_lifecycle() {
         .add_artifact(NewArtifact {
             issue_id: issue.id,
             kind: ArtifactKind::Research,
+            slug: None,
             body: serde_json::json!({
                 "topic_token": topic.token.to_string(),
                 "status": "completed",

@@ -84,6 +84,7 @@ impl IssueService for IssueServiceImpl {
                     NewArtifact {
                         issue_id: updated.id,
                         kind: ArtifactKind::StatusTransition,
+                        slug: None,
                         body: serde_json::json!({
                             "from": from_str,
                             "to": to_str,
@@ -261,6 +262,7 @@ mod tests {
             token: ArtifactToken::new(id),
             issue_id,
             kind,
+            slug: None,
             body: serde_json::json!({}),
             created_by: "U_test".into(),
             created_at: now,
@@ -429,6 +431,7 @@ mod tests {
                     token: ArtifactToken::new(999),
                     issue_id: 42,
                     kind: ArtifactKind::StatusTransition,
+                    slug: None,
                     body: serde_json::json!({}),
                     created_by: "system".into(),
                     created_at: chrono::Utc::now(),
@@ -513,6 +516,7 @@ mod tests {
             token: ArtifactToken::new(1),
             issue_id: 42,
             kind: ArtifactKind::ResearchTopic,
+            slug: None,
             body: serde_json::json!({"description": "Investigate auth", "tags": []}),
             created_by: "U_test".into(),
             created_at: chrono::Utc::now(),

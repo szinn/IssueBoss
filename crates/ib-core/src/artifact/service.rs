@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::{
     Error, RepositoryError,
-    artifact::model::{ArtifactKind, ArtifactToken, IssueArtifact, NewArtifact},
+    artifact::model::{ArtifactKind, IssueArtifact, NewArtifact},
     issue::IssueId,
     repository::RepositoryService,
     with_read_only_transaction, with_transaction,
@@ -13,8 +13,8 @@ use crate::{
 #[async_trait::async_trait]
 pub trait ArtifactService: Send + Sync {
     async fn add_artifact(&self, new_artifact: NewArtifact) -> Result<IssueArtifact, Error>;
-    async fn update_artifact(&self, token: ArtifactToken, body: Value) -> Result<IssueArtifact, Error>;
-    async fn remove_artifact(&self, token: ArtifactToken) -> Result<(), Error>;
+    async fn update_artifact(&self, issue_id: IssueId, slug: &str, body: Value) -> Result<IssueArtifact, Error>;
+    async fn remove_artifact(&self, issue_id: IssueId, slug: &str) -> Result<(), Error>;
     async fn list_artifacts(&self, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>, uncovered_only: bool) -> Result<Vec<IssueArtifact>, Error>;
 }
 
@@ -30,18 +30,32 @@ impl ArtifactServiceImpl {
 
 #[async_trait::async_trait]
 impl ArtifactService for ArtifactServiceImpl {
-    async fn add_artifact(&self, new_artifact: NewArtifact) -> Result<IssueArtifact, Error> {
+    async fn add_artifact(&self, mut new_artifact: NewArtifact) -> Result<IssueArtifact, Error> {
         if new_artifact.kind == ArtifactKind::StatusTransition {
             return Err(Error::Validation("StatusTransition artifacts are system-generated".into()));
         }
+        new_artifact.slug = match new_artifact.kind {
+            ArtifactKind::TriageResult => Some("triage".to_string()),
+            ArtifactKind::Spec => Some("spec".to_string()),
+            ArtifactKind::Plan => Some("plan".to_string()),
+            _ => {
+                let slug = new_artifact
+                    .slug
+                    .take()
+                    .ok_or_else(|| Error::Validation(format!("{} artifact requires a slug", new_artifact.kind)))?;
+                validate_slug(&slug)?;
+                Some(slug)
+            }
+        };
         validate_body(&new_artifact.kind, &new_artifact.body)?;
         with_transaction!(self, artifact_repository, |tx| artifact_repository.create(tx, new_artifact).await)
     }
 
-    async fn update_artifact(&self, token: ArtifactToken, body: Value) -> Result<IssueArtifact, Error> {
+    async fn update_artifact(&self, issue_id: IssueId, slug: &str, body: Value) -> Result<IssueArtifact, Error> {
+        let slug = slug.to_owned();
         with_transaction!(self, artifact_repository, |tx| {
             let mut artifact = artifact_repository
-                .find_by_token(tx, token)
+                .find_by_slug(tx, issue_id, &slug)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
             if artifact.kind == ArtifactKind::StatusTransition {
@@ -60,10 +74,11 @@ impl ArtifactService for ArtifactServiceImpl {
         })
     }
 
-    async fn remove_artifact(&self, token: ArtifactToken) -> Result<(), Error> {
+    async fn remove_artifact(&self, issue_id: IssueId, slug: &str) -> Result<(), Error> {
+        let slug = slug.to_owned();
         with_transaction!(self, artifact_repository, |tx| {
             let artifact = artifact_repository
-                .find_by_token(tx, token)
+                .find_by_slug(tx, issue_id, &slug)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
             artifact_repository.delete(tx, artifact.id).await
@@ -147,6 +162,16 @@ pub(crate) fn validate_body(kind: &ArtifactKind, body: &Value) -> Result<(), Err
     Ok(())
 }
 
+fn validate_slug(slug: &str) -> Result<(), Error> {
+    if slug.is_empty() {
+        return Err(Error::Validation("slug must not be empty".into()));
+    }
+    if !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(Error::Validation("slug must contain only lowercase letters, digits, and hyphens".into()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -169,6 +194,7 @@ mod tests {
             token: ArtifactToken::new(id),
             issue_id,
             kind,
+            slug: None,
             body,
             created_by: "U_test".to_string(),
             created_at: Utc::now(),
@@ -191,6 +217,7 @@ mod tests {
             .add_artifact(NewArtifact {
                 issue_id: 1,
                 kind: ArtifactKind::StatusTransition,
+                slug: None,
                 body: json!({"from": "Triage", "to": "SpecNeeded"}),
                 created_by: "U_1".into(),
             })
@@ -205,11 +232,91 @@ mod tests {
             .add_artifact(NewArtifact {
                 issue_id: 1,
                 kind: ArtifactKind::Research,
+                slug: Some("test-topic".into()),
                 body: json!({"status": "completed", "path": "insights/research/foo.md"}),
                 created_by: "U_1".into(),
             })
             .await;
         assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_rejects_multi_type_without_slug() {
+        let svc = make_svc(MockArtifactRepository::new());
+        let result = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::ResearchTopic,
+                slug: None,
+                body: json!({"description": "investigate auth"}),
+                created_by: "U_1".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_rejects_invalid_slug() {
+        let svc = make_svc(MockArtifactRepository::new());
+        // Uppercase letters are not allowed in slugs
+        let result = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Comment,
+                slug: Some("UPPER_CASE".into()),
+                body: json!({"text": "a comment"}),
+                created_by: "U_1".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+        // Underscores are not allowed either
+        let result = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Comment,
+                slug: Some("under_score".into()),
+                body: json!({"text": "a comment"}),
+                created_by: "U_1".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_auto_assigns_triage_slug() {
+        let mut repo = MockArtifactRepository::new();
+        repo.expect_create().returning(|_, record| {
+            let slug = record.slug.clone();
+            let kind = record.kind.clone();
+            let issue_id = record.issue_id;
+            let body = record.body.clone();
+            let created_by = record.created_by.clone();
+            Box::pin(async move {
+                Ok(IssueArtifact {
+                    id: 1,
+                    token: ArtifactToken::new(1),
+                    issue_id,
+                    kind,
+                    slug,
+                    body,
+                    created_by,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                })
+            })
+        });
+        let svc = make_svc(repo);
+        let artifact = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::TriageResult,
+                slug: None,
+                body: json!({"path": "insights/triage/t-1.md"}),
+                created_by: "U_1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(artifact.slug, Some("triage".to_string()));
     }
 
     #[tokio::test]
