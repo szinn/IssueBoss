@@ -102,6 +102,19 @@ struct TransitionIssueMcp {
     completeness: serde_json::Value,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct MovedArtifactMcp {
+    issue_slug: String,
+    slug: Option<String>,
+    kind: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct MoveArtifactResultMcp {
+    updated: usize,
+    artifacts: Vec<MovedArtifactMcp>,
+}
+
 // ---------------------------------------------------------------------------
 // Tool parameter structs
 // ---------------------------------------------------------------------------
@@ -206,6 +219,17 @@ struct ListArtifactsParams {
     /// artifact
     #[serde(default)]
     uncovered_only: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct MoveArtifactParams {
+    /// Current path stored in artifact bodies (e.g.
+    /// ".insights/specs/IB-1-spec.md"). Move the file on disk first, then
+    /// call this tool.
+    old_path: String,
+    /// Replacement path. All artifacts referencing old_path will be updated to
+    /// this value.
+    new_path: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +561,51 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?;
         serialize(&artifacts.into_iter().map(ArtifactMcp::from_artifact).collect::<Vec<_>>())
+    }
+
+    #[tool(
+        description = "Move/rename artifact file paths. Finds all artifacts across all issues whose body path equals old_path and updates them to new_path \
+                       atomically. Move the file on disk first — the server does not access the filesystem. Returns the count and list of updated artifacts."
+    )]
+    async fn move_artifact(&self, params: Parameters<MoveArtifactParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let updated = self
+            .core
+            .artifact_service()
+            .move_artifact(&p.old_path, &p.new_path)
+            .await
+            .map_err(map_core_err)?;
+
+        // Resolve issue_id → issue_slug; cache to avoid duplicate lookups for
+        // artifacts on the same issue
+        let mut slug_cache: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+        let mut artifacts = Vec::with_capacity(updated.len());
+        for artifact in &updated {
+            let issue_slug = if let Some(slug) = slug_cache.get(&artifact.issue_id) {
+                slug.clone()
+            } else {
+                let slug = self
+                    .core
+                    .issue_service()
+                    .find_by_id(artifact.issue_id)
+                    .await
+                    .map_err(map_core_err)?
+                    .map(|i| i.slug)
+                    .unwrap_or_else(|| format!("#{}", artifact.issue_id));
+                slug_cache.insert(artifact.issue_id, slug.clone());
+                slug
+            };
+            artifacts.push(MovedArtifactMcp {
+                issue_slug,
+                slug: artifact.slug.clone(),
+                kind: artifact.kind.to_string(),
+            });
+        }
+
+        serialize(&MoveArtifactResultMcp {
+            updated: artifacts.len(),
+            artifacts,
+        })
     }
 }
 
@@ -1669,5 +1738,90 @@ mod tests {
             "expected gate_failed in error message, got: {}",
             err.message
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // move_artifact
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn move_artifact_happy_path() {
+        use ib_core::artifact::{
+            MockArtifactRepository,
+            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        };
+        let issue = fake_issue(10, 1, 1);
+        let artifact = IssueArtifact {
+            id: 1,
+            token: ArtifactToken::new(1),
+            issue_id: 10,
+            kind: ArtifactKind::Spec,
+            slug: Some("spec".to_string()),
+            body: serde_json::json!({"path": ".insights/new-spec.md"}),
+            created_by: "U_1".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        {
+            let a = artifact.clone();
+            artifact_repo.expect_find_by_path().returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(vec![a]) })
+            });
+        }
+        artifact_repo.expect_update().returning(|_, a| Box::pin(async move { Ok(a) }));
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .move_artifact(Parameters(MoveArtifactParams {
+                old_path: ".insights/old-spec.md".to_string(),
+                new_path: ".insights/new-spec.md".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["updated"], 1);
+        assert_eq!(parsed["artifacts"][0]["issue_slug"], "TP-1");
+        assert_eq!(parsed["artifacts"][0]["slug"], "spec");
+        assert_eq!(parsed["artifacts"][0]["kind"], "Spec");
+    }
+
+    #[tokio::test]
+    async fn move_artifact_noop_same_path() {
+        use ib_core::artifact::MockArtifactRepository;
+
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        // No expectations set — repository must NOT be called for same-path no-op
+        let artifact_repo = MockArtifactRepository::new();
+
+        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .move_artifact(Parameters(MoveArtifactParams {
+                old_path: ".insights/spec.md".to_string(),
+                new_path: ".insights/spec.md".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["updated"], 0);
+        assert!(parsed["artifacts"].as_array().unwrap().is_empty());
     }
 }

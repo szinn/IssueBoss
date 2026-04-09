@@ -16,6 +16,7 @@ pub trait ArtifactService: Send + Sync {
     async fn update_artifact(&self, issue_id: IssueId, slug: &str, body: Value) -> Result<IssueArtifact, Error>;
     async fn remove_artifact(&self, issue_id: IssueId, slug: &str) -> Result<(), Error>;
     async fn list_artifacts(&self, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>, uncovered_only: bool) -> Result<Vec<IssueArtifact>, Error>;
+    async fn move_artifact(&self, old_path: &str, new_path: &str) -> Result<Vec<IssueArtifact>, Error>;
 }
 
 pub(crate) struct ArtifactServiceImpl {
@@ -112,6 +113,26 @@ impl ArtifactService for ArtifactServiceImpl {
                     }
                 })
                 .collect())
+        })
+    }
+
+    async fn move_artifact(&self, old_path: &str, new_path: &str) -> Result<Vec<IssueArtifact>, Error> {
+        if old_path == new_path {
+            return Ok(vec![]);
+        }
+        let old_path = old_path.to_owned();
+        let new_path = new_path.to_owned();
+        with_transaction!(self, artifact_repository, |tx| {
+            let artifacts = artifact_repository.find_by_path(tx, &old_path).await?;
+            let mut results = Vec::with_capacity(artifacts.len());
+            for mut artifact in artifacts {
+                if let Some(obj) = artifact.body.as_object_mut() {
+                    obj.insert("path".to_owned(), serde_json::Value::String(new_path.clone()));
+                }
+                let updated = artifact_repository.update(tx, artifact).await?;
+                results.push(updated);
+            }
+            Ok(results)
         })
     }
 }
@@ -375,5 +396,45 @@ mod tests {
         // Covered topic filtered out; Research and Comment pass through
         assert_eq!(result.len(), 2);
         assert!(result.iter().any(|a| a.id == comment.id));
+    }
+
+    #[tokio::test]
+    async fn move_artifact_noop_when_paths_equal() {
+        // No repository expectations — DB must not be touched
+        let svc = make_svc(MockArtifactRepository::new());
+        let result = svc.move_artifact(".insights/spec.md", ".insights/spec.md").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn move_artifact_returns_empty_when_no_artifacts_match() {
+        let mut repo = MockArtifactRepository::new();
+        repo.expect_find_by_path().returning(|_, _| Box::pin(async { Ok(vec![]) }));
+        let svc = make_svc(repo);
+        let result = svc.move_artifact(".insights/old.md", ".insights/new.md").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn move_artifact_updates_all_matching_artifacts() {
+        let artifact1 = fake_artifact(1, 10, ArtifactKind::Spec, json!({"path": ".insights/old.md"}));
+        let artifact2 = fake_artifact(2, 11, ArtifactKind::TriageResult, json!({"path": ".insights/old.md"}));
+
+        let a1 = artifact1.clone();
+        let a2 = artifact2.clone();
+        let mut repo = MockArtifactRepository::new();
+        repo.expect_find_by_path().returning(move |_, _| {
+            let v = vec![a1.clone(), a2.clone()];
+            Box::pin(async move { Ok(v) })
+        });
+        repo.expect_update().times(2).returning(|_, a| Box::pin(async move { Ok(a) }));
+
+        let svc = make_svc(repo);
+        let result = svc.move_artifact(".insights/old.md", ".insights/new.md").await.unwrap();
+
+        assert_eq!(result.len(), 2);
+        for artifact in &result {
+            assert_eq!(artifact.body["path"], ".insights/new.md");
+        }
     }
 }

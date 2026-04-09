@@ -183,11 +183,7 @@ async fn artifact_slug_remove() {
         .await
         .unwrap();
 
-    ctx.services
-        .artifact_service()
-        .remove_artifact(issue.id, "to-remove")
-        .await
-        .unwrap();
+    ctx.services.artifact_service().remove_artifact(issue.id, "to-remove").await.unwrap();
 
     let result = ctx
         .services

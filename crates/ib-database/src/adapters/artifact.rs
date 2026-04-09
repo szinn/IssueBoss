@@ -7,7 +7,7 @@ use ib_core::{
     issue::IssueId,
     repository::Transaction,
 };
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, sea_query::Expr};
 
 use crate::{
     entities::{issue_artifacts, prelude},
@@ -67,6 +67,25 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
             .await
             .map_err(handle_dberr)?
             .map(Into::into))
+    }
+
+    async fn find_by_path(&self, transaction: &dyn Transaction, path: &str) -> Result<Vec<IssueArtifact>, Error> {
+        let db = TransactionImpl::get_db_transaction(transaction)?;
+        let path = path.to_owned();
+        let filter = match db.get_database_backend() {
+            sea_orm::DatabaseBackend::Sqlite => Expr::cust_with_values("json_extract(body, '$.path') = ?", [path.clone()]),
+            sea_orm::DatabaseBackend::MySql => Expr::cust_with_values("JSON_UNQUOTE(JSON_EXTRACT(body, '$.path')) = ?", [path.clone()]),
+            sea_orm::DatabaseBackend::Postgres => Expr::cust_with_values("body->>'path' = ?", [path.clone()]),
+            _ => Expr::cust_with_values("body->>'path' = ?", [path]),
+        };
+        Ok(prelude::IssueArtifacts::find()
+            .filter(filter)
+            .all(db)
+            .await
+            .map_err(handle_dberr)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     async fn list(&self, transaction: &dyn Transaction, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>) -> Result<Vec<IssueArtifact>, Error> {
