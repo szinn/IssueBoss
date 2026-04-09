@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use ib_core::{
     CoreServices,
     artifact::{ArtifactKind, IssueArtifact, NewArtifact},
-    issue::{IssueFilter, IssuePriority, IssueSize, IssueStatus, NewIssue},
+    issue::{IssueFilter, IssueId, IssuePriority, IssueSize, IssueStatus, NewIssue},
     project::Project,
     user::User,
 };
@@ -578,7 +578,7 @@ impl IssueBossServer {
 
         // Resolve issue_id → issue_slug; cache to avoid duplicate lookups for
         // artifacts on the same issue
-        let mut slug_cache: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+        let mut slug_cache: HashMap<IssueId, String> = HashMap::new();
         let mut artifacts = Vec::with_capacity(updated.len());
         for artifact in &updated {
             let issue_slug = if let Some(slug) = slug_cache.get(&artifact.issue_id) {
