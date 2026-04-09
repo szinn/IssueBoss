@@ -225,3 +225,88 @@ async fn artifact_slug_uniqueness_enforced() {
 
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn move_artifact_updates_matching_artifacts() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Move Test", "move-test", "MV").await;
+
+    let issue1 = fixtures::create_issue(&ctx.services, project.id, "MV", "Issue 1").await;
+    let issue2 = fixtures::create_issue(&ctx.services, project.id, "MV", "Issue 2").await;
+
+    let old_path = ".insights/specs/shared-spec.md";
+    let new_path = ".insights/specs/moved-spec.md";
+
+    // Add TriageResult (singleton) pointing to old_path on both issues
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue1.id,
+            kind: ArtifactKind::TriageResult,
+            slug: None,
+            body: serde_json::json!({"path": old_path}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue2.id,
+            kind: ArtifactKind::TriageResult,
+            slug: None,
+            body: serde_json::json!({"path": old_path}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    // Move the path — should update both artifacts
+    let updated = ctx.services.artifact_service().move_artifact(old_path, new_path).await.unwrap();
+    assert_eq!(updated.len(), 2);
+    for artifact in &updated {
+        assert_eq!(artifact.body["path"], new_path);
+    }
+
+    // Verify via list_artifacts that both DB records reflect the new path
+    let arts1 = ctx
+        .services
+        .artifact_service()
+        .list_artifacts(issue1.id, Some(vec![ArtifactKind::TriageResult]), false)
+        .await
+        .unwrap();
+    assert_eq!(arts1[0].body["path"], new_path);
+
+    let arts2 = ctx
+        .services
+        .artifact_service()
+        .list_artifacts(issue2.id, Some(vec![ArtifactKind::TriageResult]), false)
+        .await
+        .unwrap();
+    assert_eq!(arts2[0].body["path"], new_path);
+}
+
+#[tokio::test]
+async fn move_artifact_noop_same_path() {
+    let ctx = setup().await;
+    let result = ctx
+        .services
+        .artifact_service()
+        .move_artifact(".insights/spec.md", ".insights/spec.md")
+        .await
+        .unwrap();
+    assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn move_artifact_no_matching_artifacts() {
+    let ctx = setup().await;
+    let result = ctx
+        .services
+        .artifact_service()
+        .move_artifact(".insights/nonexistent.md", ".insights/also-nonexistent.md")
+        .await
+        .unwrap();
+    assert!(result.is_empty());
+}

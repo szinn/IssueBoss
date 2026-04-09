@@ -7,7 +7,7 @@ use ib_core::{
     issue::IssueId,
     repository::Transaction,
 };
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, sea_query::Expr};
+use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, Set, Statement};
 
 use crate::{
     entities::{issue_artifacts, prelude},
@@ -71,21 +71,20 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
 
     async fn find_by_path(&self, transaction: &dyn Transaction, path: &str) -> Result<Vec<IssueArtifact>, Error> {
         let db = TransactionImpl::get_db_transaction(transaction)?;
-        let path = path.to_owned();
-        let filter = match db.get_database_backend() {
-            sea_orm::DatabaseBackend::Sqlite => Expr::cust_with_values("json_extract(body, '$.path') = ?", [path.clone()]),
-            sea_orm::DatabaseBackend::MySql => Expr::cust_with_values("JSON_UNQUOTE(JSON_EXTRACT(body, '$.path')) = ?", [path.clone()]),
-            sea_orm::DatabaseBackend::Postgres => Expr::cust_with_values("body->>'path' = ?", [path.clone()]),
-            _ => Expr::cust_with_values("body->>'path' = ?", [path]),
+        let backend = db.get_database_backend();
+        let sql = match backend {
+            sea_orm::DatabaseBackend::Sqlite => {
+                "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE json_extract(body, '$.path') = ?"
+            }
+            sea_orm::DatabaseBackend::MySql => {
+                "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE JSON_UNQUOTE(JSON_EXTRACT(body, \
+                 '$.path')) = ?"
+            }
+            _ => "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE body::jsonb->>'path' = $1",
         };
-        Ok(prelude::IssueArtifacts::find()
-            .filter(filter)
-            .all(db)
-            .await
-            .map_err(handle_dberr)?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        let stmt = Statement::from_sql_and_values(backend, sql, [sea_orm::Value::String(Some(path.to_owned()))]);
+        let rows = issue_artifacts::Model::find_by_statement(stmt).all(db).await.map_err(handle_dberr)?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     async fn list(&self, transaction: &dyn Transaction, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>) -> Result<Vec<IssueArtifact>, Error> {
