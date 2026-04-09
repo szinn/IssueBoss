@@ -75,7 +75,7 @@ impl IssueSummaryMcp {
 
 #[derive(Debug, serde::Serialize)]
 struct ArtifactMcp {
-    token: String,
+    slug: Option<String>,
     kind: String,
     body: serde_json::Value,
     created_by: String,
@@ -86,7 +86,7 @@ struct ArtifactMcp {
 impl ArtifactMcp {
     fn from_artifact(a: IssueArtifact) -> Self {
         Self {
-            token: a.token.to_string(),
+            slug: a.slug,
             kind: a.kind.to_string(),
             body: a.body,
             created_by: a.created_by,
@@ -1291,6 +1291,7 @@ mod tests {
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["kind"], "Comment");
+        assert_eq!(json["slug"], serde_json::json!(null));
     }
 
     #[tokio::test]
@@ -1404,6 +1405,7 @@ mod tests {
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["body"]["text"], "updated");
+        assert_eq!(json["slug"], "my-comment");
     }
 
     #[tokio::test]
