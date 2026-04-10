@@ -47,6 +47,12 @@ pub enum Error {
     #[error("Gate failure: condition={condition}")]
     GateFailure { condition: String, failing_tokens: Vec<String> },
 
+    #[error("Dependency cycle detected")]
+    CycleDetected,
+
+    #[error("Already exists")]
+    AlreadyExists,
+
     #[error(transparent)]
     RepositoryError(#[from] RepositoryError),
 }
@@ -59,6 +65,8 @@ impl Error {
             Self::InvalidId(_) | Self::InvalidPageSize(_) | Self::InvalidToken(_) => ErrorKind::BadRequest,
             Self::Validation(_) => ErrorKind::InvalidInput,
             Self::GateFailure { .. } => ErrorKind::InvalidInput,
+            Self::CycleDetected => ErrorKind::InvalidInput,
+            Self::AlreadyExists => ErrorKind::Conflict,
             Self::InvalidTransactionType | Self::Infrastructure(_) | Self::CryptoError(_) => ErrorKind::Internal,
             Self::StorageUnavailable(_) => ErrorKind::ServiceUnavailable,
             Self::RepositoryError(e) => e.kind(),

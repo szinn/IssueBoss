@@ -4,6 +4,8 @@ pub(crate) use artifact::ArtifactRepositoryAdapter;
 pub(crate) mod issue;
 pub(crate) mod project;
 pub(crate) mod project_member;
+pub(crate) mod relationship;
+pub(crate) use relationship::IssueRelationshipRepositoryAdapter;
 pub(crate) mod user;
 pub(crate) use api_key::ApiKeyRepositoryAdapter;
 pub(crate) use issue::IssueRepositoryAdapter;

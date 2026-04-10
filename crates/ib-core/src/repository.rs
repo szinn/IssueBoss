@@ -8,6 +8,7 @@ use crate::{
     artifact::ArtifactRepository,
     issue::IssueRepository,
     project::{ProjectMemberRepository, ProjectRepository},
+    relationship::IssueRelationshipRepository,
     user::UserRepository,
 };
 
@@ -21,6 +22,7 @@ pub struct RepositoryService {
     project_member_repository: Arc<dyn ProjectMemberRepository>,
     issue_repository: Arc<dyn IssueRepository>,
     artifact_repository: Arc<dyn ArtifactRepository>,
+    relationship_repository: Arc<dyn IssueRelationshipRepository>,
 }
 
 impl RepositoryService {
@@ -64,6 +66,12 @@ impl RepositoryService {
     #[must_use]
     pub fn artifact_repository(&self) -> &Arc<dyn ArtifactRepository> {
         &self.artifact_repository
+    }
+
+    /// Returns a reference to the issue relationship repository.
+    #[must_use]
+    pub fn relationship_repository(&self) -> &Arc<dyn IssueRelationshipRepository> {
+        &self.relationship_repository
     }
 }
 
@@ -168,13 +176,14 @@ macro_rules! with_read_only_transaction {
 pub mod testing {
     use std::{any::Any, sync::Arc};
 
-    use super::{ArtifactRepository, MockRepository, RepositoryServiceBuilder, Transaction};
+    use super::{ArtifactRepository, IssueRelationshipRepository, MockRepository, RepositoryServiceBuilder, Transaction};
     use crate::{
         Error,
         api_key::repository::MockApiKeyRepository,
         artifact::MockArtifactRepository,
         issue::repository::MockIssueRepository,
         project::repository::{MockProjectMemberRepository, MockProjectRepository},
+        relationship::MockIssueRelationshipRepository,
         user::repository::MockUserRepository,
     };
 
@@ -217,5 +226,6 @@ pub mod testing {
             .project_member_repository(Arc::new(MockProjectMemberRepository::new()))
             .issue_repository(Arc::new(MockIssueRepository::new()))
             .artifact_repository(Arc::new(MockArtifactRepository::new()) as Arc<dyn ArtifactRepository>)
+            .relationship_repository(Arc::new(MockIssueRelationshipRepository::new()) as Arc<dyn IssueRelationshipRepository>)
     }
 }

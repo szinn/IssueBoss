@@ -16,6 +16,7 @@ use ib_core::{
     artifact::ArtifactRepository,
     issue::IssueRepository,
     project::{ProjectMemberRepository, ProjectRepository},
+    relationship::IssueRelationshipRepository,
     repository::{Repository, RepositoryService, RepositoryServiceBuilder},
     user::UserRepository,
 };
@@ -24,8 +25,8 @@ use sea_orm_migration::MigratorTrait;
 
 use crate::{
     adapters::{
-        ApiKeyRepositoryAdapter, ArtifactRepositoryAdapter, IssueRepositoryAdapter, ProjectMemberRepositoryAdapter, ProjectRepositoryAdapter,
-        UserRepositoryAdapter,
+        ApiKeyRepositoryAdapter, ArtifactRepositoryAdapter, IssueRelationshipRepositoryAdapter, IssueRepositoryAdapter, ProjectMemberRepositoryAdapter,
+        ProjectRepositoryAdapter, UserRepositoryAdapter,
     },
     migrations::Migrator,
     repository::RepositoryImpl,
@@ -59,6 +60,7 @@ pub async fn create_repository_service(database: DatabaseConnection) -> Result<A
         .project_member_repository(Arc::new(ProjectMemberRepositoryAdapter::new()) as Arc<dyn ProjectMemberRepository>)
         .issue_repository(Arc::new(IssueRepositoryAdapter::new()) as Arc<dyn IssueRepository>)
         .artifact_repository(Arc::new(ArtifactRepositoryAdapter::new()) as Arc<dyn ArtifactRepository>)
+        .relationship_repository(Arc::new(IssueRelationshipRepositoryAdapter::new()) as Arc<dyn IssueRelationshipRepository>)
         .build()
         .map_err(|e| Error::Infrastructure(e.to_string()))?;
 

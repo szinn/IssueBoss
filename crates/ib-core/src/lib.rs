@@ -3,6 +3,7 @@ pub mod artifact;
 pub mod error;
 pub mod issue;
 pub mod project;
+pub mod relationship;
 pub mod repository;
 pub mod types;
 pub mod user;
