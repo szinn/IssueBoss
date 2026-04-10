@@ -424,6 +424,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
 
         if let Some(title) = p.title {
             issue.title = title;
@@ -466,6 +467,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
 
         let updated = self
             .core
@@ -506,6 +508,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
         let artifact = self
             .core
             .artifact_service()
@@ -531,6 +534,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
         let artifact = self
             .core
             .artifact_service()
@@ -550,6 +554,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
         self.core
             .artifact_service()
             .remove_artifact(issue.id, &p.artifact_slug)
@@ -571,6 +576,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+        self.require_capability(issue.project_id, Capability::ViewIssues).await?;
         let kinds = p
             .kinds
             .map(|ks| {
@@ -1273,6 +1279,41 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn update_issue_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .update_issue(Parameters(UpdateIssueParams {
+                slug: "TP-1".to_string(),
+                title: Some("New title".to_string()),
+                description: None,
+                priority: None,
+                size: None,
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
     // -----------------------------------------------------------------------
     // transition_issue
     // -----------------------------------------------------------------------
@@ -1387,6 +1428,39 @@ mod tests {
             }))
             .await;
 
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn transition_issue_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .transition_issue(Parameters(TransitionIssueParams {
+                slug: "TP-1".to_string(),
+                new_status: "TriageInProgress".to_string(),
+                reason: None,
+            }))
+            .await;
         assert!(result.is_err());
     }
 
@@ -1576,6 +1650,40 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn add_artifact_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .add_artifact(Parameters(AddArtifactParams {
+                slug: "TP-1".to_string(),
+                kind: "Comment".to_string(),
+                artifact_slug: None,
+                body: serde_json::json!({"text": "hello"}),
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
     // -----------------------------------------------------------------------
     // update_artifact
     // -----------------------------------------------------------------------
@@ -1667,6 +1775,39 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn update_artifact_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .update_artifact(Parameters(UpdateArtifactParams {
+                issue_slug: "TP-1".to_string(),
+                artifact_slug: "comment".to_string(),
+                body: serde_json::json!({"text": "updated"}),
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
     // -----------------------------------------------------------------------
     // remove_artifact
     // -----------------------------------------------------------------------
@@ -1742,6 +1883,38 @@ mod tests {
             }))
             .await;
 
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn remove_artifact_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .remove_artifact(Parameters(RemoveArtifactParams {
+                issue_slug: "TP-1".to_string(),
+                artifact_slug: "comment".to_string(),
+            }))
+            .await;
         assert!(result.is_err());
     }
 
@@ -1852,6 +2025,39 @@ mod tests {
             }))
             .await;
 
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_artifacts_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user)
+            .list_artifacts(Parameters(ListArtifactsParams {
+                slug: "TP-1".to_string(),
+                kinds: None,
+                uncovered_only: false,
+            }))
+            .await;
         assert!(result.is_err());
     }
 
