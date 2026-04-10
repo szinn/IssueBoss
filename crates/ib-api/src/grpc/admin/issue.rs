@@ -586,12 +586,12 @@ mod tests {
                 .unwrap(),
         );
         let core = ib_core::create_services(repo_svc);
-        // TriageNeeded → Done is an illegal skip
+        // TriageNeeded → DevReview is an illegal skip (cannot jump categories)
         let err = handler::transition_issue(
             &core,
             crate::grpc::admin_proto::TransitionIssueRequest {
                 slug: "MA-1".into(),
-                new_status: "Done".into(),
+                new_status: "DevReview".into(),
             },
         )
         .await

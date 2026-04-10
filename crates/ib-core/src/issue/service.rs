@@ -492,8 +492,8 @@ mod tests {
             });
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        // TriageNeeded → Done skips all intermediate steps — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Done, None).await;
+        // TriageNeeded → DevReview jumps categories — illegal
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::DevReview, None).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 

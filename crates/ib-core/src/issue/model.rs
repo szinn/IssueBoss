@@ -240,12 +240,13 @@ impl IssueStatus {
     ///   allowed.
     /// - `Backlog` → any Needed state (reactivation).
     /// - Within categories: Needed → InProgress → Review.
-    /// - From Review: can route to own Needed or specific later Needed states
-    ///   per the routing table (no Review routes to an earlier category).
-    ///   TriageReview → any Needed; ResearchReview → Research/Spec/Plan/Dev;
-    ///   SpecReview → Research/Spec/Plan; PlanReview → Plan/Dev; DevReview →
-    ///   Dev or Done.
-    /// - `DevReview` → `Done` terminates the issue.
+    /// - Any `*Needed` → `Done` (skip all remaining phases).
+    /// - From Review: can route to own Needed or any later Needed state (no
+    ///   Review routes to an earlier category), or directly to `Done`.
+    ///   TriageReview → any Needed or Done; ResearchReview →
+    ///   Research/Spec/Plan/Dev Needed or Done; SpecReview →
+    ///   Research/Spec/Plan/Dev Needed or Done; PlanReview → Plan/Dev Needed or
+    ///   Done; DevReview → Dev Needed or Done.
     pub fn can_transition_to(&self, next: &Self) -> bool {
         if self == next {
             return false;
@@ -273,13 +274,19 @@ impl IssueStatus {
             | (Self::SpecNeeded,      Self::SpecInProgress)
             | (Self::PlanNeeded,      Self::PlanInProgress)
             | (Self::DevNeeded,       Self::DevInProgress)
+            // Needed → Done (skip all remaining phases)
+            | (Self::TriageNeeded,    Self::Done)
+            | (Self::ResearchNeeded,  Self::Done)
+            | (Self::SpecNeeded,      Self::Done)
+            | (Self::PlanNeeded,      Self::Done)
+            | (Self::DevNeeded,       Self::Done)
             // InProgress → Review
             | (Self::TriageInProgress,    Self::TriageReview)
             | (Self::ResearchInProgress,  Self::ResearchReview)
             | (Self::SpecInProgress,      Self::SpecReview)
             | (Self::PlanInProgress,      Self::PlanReview)
             | (Self::DevInProgress,       Self::DevReview)
-            // Review → Needed (routing layer)
+            // Review → Needed (routing layer — no review routes to an earlier category)
             | (Self::TriageReview,    Self::TriageNeeded)
             | (Self::TriageReview,    Self::ResearchNeeded)
             | (Self::TriageReview,    Self::SpecNeeded)
@@ -292,9 +299,15 @@ impl IssueStatus {
             | (Self::SpecReview,      Self::ResearchNeeded)
             | (Self::SpecReview,      Self::SpecNeeded)
             | (Self::SpecReview,      Self::PlanNeeded)
+            | (Self::SpecReview,      Self::DevNeeded)
             | (Self::PlanReview,      Self::PlanNeeded)
             | (Self::PlanReview,      Self::DevNeeded)
             | (Self::DevReview,       Self::DevNeeded)
+            // Review → Done (skip all remaining phases)
+            | (Self::TriageReview,    Self::Done)
+            | (Self::ResearchReview,  Self::Done)
+            | (Self::SpecReview,      Self::Done)
+            | (Self::PlanReview,      Self::Done)
             | (Self::DevReview,       Self::Done)
         )
     }
@@ -512,7 +525,6 @@ mod tests {
             assert!(IssueStatus::TriageReview.can_transition_to(&needed));
         }
         assert!(!IssueStatus::TriageReview.can_transition_to(&IssueStatus::TriageInProgress));
-        assert!(!IssueStatus::TriageReview.can_transition_to(&IssueStatus::Done));
     }
 
     #[test]
@@ -525,5 +537,36 @@ mod tests {
         assert!(IssueStatus::DevReview.can_transition_to(&IssueStatus::DevNeeded));
         assert!(IssueStatus::DevReview.can_transition_to(&IssueStatus::Done));
         assert!(!IssueStatus::DevReview.can_transition_to(&IssueStatus::PlanNeeded));
+    }
+
+    #[test]
+    fn review_can_transition_to_done() {
+        for review in [
+            IssueStatus::TriageReview,
+            IssueStatus::ResearchReview,
+            IssueStatus::SpecReview,
+            IssueStatus::PlanReview,
+            IssueStatus::DevReview,
+        ] {
+            assert!(review.can_transition_to(&IssueStatus::Done), "{review:?} → Done should be allowed");
+        }
+    }
+
+    #[test]
+    fn needed_can_transition_to_done() {
+        for needed in [
+            IssueStatus::TriageNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::SpecNeeded,
+            IssueStatus::PlanNeeded,
+            IssueStatus::DevNeeded,
+        ] {
+            assert!(needed.can_transition_to(&IssueStatus::Done), "{needed:?} → Done should be allowed");
+        }
+    }
+
+    #[test]
+    fn spec_review_can_reach_dev_needed() {
+        assert!(IssueStatus::SpecReview.can_transition_to(&IssueStatus::DevNeeded));
     }
 }
