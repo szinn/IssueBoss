@@ -59,6 +59,50 @@ pub(crate) mod handler {
     }
 }
 
+pub mod api {
+    use ib_core::Error;
+    use tonic::transport::Channel;
+
+    use crate::{
+        error::ApiError,
+        grpc::{
+            admin::api::{make_client, with_api_key},
+            admin_proto::{
+                AddRelationshipRequest, ListRelationshipsRequest, ListRelationshipsResponse, RelationshipResponse, RemoveRelationshipRequest,
+                admin_service_client::AdminServiceClient,
+            },
+        },
+    };
+
+    pub async fn add_relationship(host: &str, port: u16, from_slug: &str, to_slug: &str, kind: &str) -> Result<RelationshipResponse, Error> {
+        let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
+        let req = with_api_key(tonic::Request::new(AddRelationshipRequest {
+            from_slug: from_slug.to_owned(),
+            to_slug: to_slug.to_owned(),
+            kind: kind.to_owned(),
+        }));
+        client.add_relationship(req).await.map(|r| r.into_inner()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+    }
+
+    pub async fn remove_relationship(host: &str, port: u16, from_slug: &str, to_slug: &str, kind: &str) -> Result<(), Error> {
+        let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
+        let req = with_api_key(tonic::Request::new(RemoveRelationshipRequest {
+            from_slug: from_slug.to_owned(),
+            to_slug: to_slug.to_owned(),
+            kind: kind.to_owned(),
+        }));
+        client.remove_relationship(req).await.map(|_| ()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+    }
+
+    pub async fn list_relationships(host: &str, port: u16, issue_slug: &str) -> Result<ListRelationshipsResponse, Error> {
+        let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
+        let req = with_api_key(tonic::Request::new(ListRelationshipsRequest {
+            issue_slug: issue_slug.to_owned(),
+        }));
+        client.list_relationships(req).await.map(|r| r.into_inner()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

@@ -21,7 +21,7 @@ pub mod api_key;
 pub mod artifact;
 pub mod issue;
 pub mod project;
-pub(crate) mod relationship;
+pub mod relationship;
 pub mod super_admin;
 pub mod user;
 
