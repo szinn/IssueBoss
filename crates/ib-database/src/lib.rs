@@ -39,7 +39,11 @@ pub async fn open_database(database_url: &str) -> Result<DatabaseConnection, Err
         .sqlx_logging(true)
         .sqlx_logging_level(tracing::log::LevelFilter::Info);
 
-    Ok(Database::connect(opt).await.map_err(handle_dberr)?)
+    let connection = Database::connect(opt).await.map_err(handle_dberr)?;
+
+    tracing::debug!("...database connected");
+
+    Ok(connection)
 }
 
 pub async fn create_repository_service(database: DatabaseConnection) -> Result<Arc<RepositoryService>, Error> {
