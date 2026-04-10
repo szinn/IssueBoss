@@ -602,6 +602,9 @@ impl IssueBossServer {
                        atomically. Move the file on disk first — the server does not access the filesystem. Returns the count and list of updated artifacts."
     )]
     async fn move_artifact(&self, params: Parameters<MoveArtifactParams>) -> Result<String, McpError> {
+        if !self.user.capabilities.has(Capability::Admin) && !self.user.capabilities.has(Capability::SuperAdmin) {
+            return Err(McpError::invalid_params("not found", None));
+        }
         let p = params.0;
         let updated = self
             .core
@@ -662,6 +665,7 @@ impl IssueBossServer {
                 .await
                 .map_err(map_core_err)?
                 .ok_or_else(|| McpError::invalid_params(format!("issue '{slug}' not found"), None))?;
+            self.require_capability(issue.project_id, Capability::ViewIssues).await?;
             let json = serialize(&IssueSummaryMcp::from_issue(issue))?;
             Ok(ReadResourceResult::new(vec![
                 ResourceContents::text(json, uri).with_mime_type("application/json"),
@@ -2198,5 +2202,46 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["updated"], 0);
         assert!(parsed["artifacts"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn move_artifact_non_admin_returns_error() {
+        // A non-admin user must not be able to move artifacts across projects.
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let core = make_core(MockProjectRepository::new(), MockIssueRepository::new());
+        let result = IssueBossServer::new(core, user)
+            .move_artifact(Parameters(MoveArtifactParams {
+                old_path: ".insights/old.md".to_string(),
+                new_path: ".insights/new.md".to_string(),
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn read_issue_resource_non_member_returns_error() {
+        let issue = fake_issue(10, 1, 1);
+        let user = fake_user_with_caps(1, Capabilities::default());
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
+        let result = IssueBossServer::new(core, user).read_resource_inner("issueboss://issues/TP-1").await;
+        assert!(result.is_err());
     }
 }
