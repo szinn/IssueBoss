@@ -3671,9 +3671,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
 
 [[package]]
 name = "num-integer"
@@ -4869,9 +4869,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm"
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b846dc1c7fefbea372c03765ff08307d68894bbad8c73b66176dcd53a3ee131"
+checksum = "9b5428ce6a0c8f6b9858df21ad1aa00c2fb94e1c9f344a0436bc855391e5a225"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4914,9 +4914,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-cli"
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd9b34d4c8e615079c04eb7863a429c2d2a8bf9c934eb9eeb580f51f36367124"
+checksum = "4cd42605c3b611785eed593406900f463b86c61792e723272e0434e77ed9cd8d"
 dependencies = [
  "chrono",
  "clap",
@@ -4934,9 +4934,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-macros"
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b449fe660e4d365f335222025df97ae01e670ef7ad788b3c67db9183b6cb0474"
+checksum = "ae1374d83dd5b43f14dcc90fc726486c556f4db774b680b12b8c680af76e8233"
 dependencies = [
  "heck 0.5.0",
  "itertools",
@@ -4950,9 +4950,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-migration"
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3ceb928aac8be83332d34d1fdbc827d43696135a800723ffeb2e0b33b7b495e"
+checksum = "73f6ce467587c910bb2842cf001ea600ac6228ba5f3f39c1dc499929e34a8f29"
 dependencies = [
  "async-trait",
  "clap",
@@ -4966,9 +4966,9 @@ dependencies = [
 
 [[package]]
 name = "sea-query"
-version = "1.0.0-rc.31"
+version = "1.0.0-rc.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58decdaaaf2a698170af2fa1b2e8f7b43a970e7768bf18aebaab113bada46354"
+checksum = "b04cdb0135c16e829504e93fbe7880513578d56f07aaea152283526590111828"
 dependencies = [
  "chrono",
  "inherent",
@@ -4996,9 +4996,9 @@ dependencies = [
 
 [[package]]
 name = "sea-query-sqlx"
-version = "0.8.0-rc.14"
+version = "0.8.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4377164b09a11bb692dec6966eb0e6908d63d768defef0be689b39e02cf8544"
+checksum = "a04aeecfe00614fece56336fd35dc385bb9ffed0c75660695ba925e42a3991ef"
 dependencies = [
  "sea-query",
  "sqlx",
@@ -5664,9 +5664,9 @@ dependencies = [
 
 [[package]]
 name = "strum"
-version = "0.27.2"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
 
 [[package]]
 name = "subsecond"
@@ -5881,9 +5881,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.45"
+version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9e442fc33d7fdb45aa9bfeb312c095964abdf596f7567261062b2a7107aaabd"
+checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
  "itoa",
@@ -5896,15 +5896,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e552d1249bf61ac2a52db88179fd0673def1e1ad8243a00d9ec9ed71fee3dd"
+checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
 dependencies = [
  "num-conv",
  "time-core",
