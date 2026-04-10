@@ -4,7 +4,8 @@ use ib_core::{
     CoreServices,
     artifact::{ArtifactKind, IssueArtifact, NewArtifact},
     issue::{IssueFilter, IssueId, IssuePriority, IssueSize, IssueStatus, NewIssue},
-    project::Project,
+    project::{Project, ProjectId},
+    types::Capability,
     user::User,
 };
 use rmcp::{
@@ -305,6 +306,28 @@ impl IssueBossServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    /// Check that the authenticated user holds `cap` for the given project.
+    ///
+    /// Admin and SuperAdmin users bypass the membership check. All other users
+    /// must be project members and hold the required capability. Returns an
+    /// opaque "not found" error on failure to avoid leaking project existence.
+    async fn require_capability(&self, project_id: ProjectId, cap: Capability) -> Result<(), McpError> {
+        if self.user.capabilities.has(Capability::Admin) || self.user.capabilities.has(Capability::SuperAdmin) {
+            return Ok(());
+        }
+        let caps = self
+            .core
+            .project_service()
+            .capabilities_for_user(project_id, self.user.id)
+            .await
+            .map_err(map_core_err)?;
+        if caps.has(cap) {
+            Ok(())
+        } else {
+            Err(McpError::invalid_params("not found", None))
+        }
+    }
 }
 
 #[tool_router]
@@ -322,6 +345,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("project '{}' not found", p.project_slug), None))?;
+        self.require_capability(project.id, Capability::ViewIssues).await?;
 
         let filter = IssueFilter {
             status: p
@@ -366,6 +390,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?
             .ok_or_else(|| McpError::invalid_params(format!("project '{}' not found", p.project_slug), None))?;
+        self.require_capability(project.id, Capability::CreateIssues).await?;
 
         let priority = p
             .priority
@@ -696,7 +721,7 @@ mod tests {
     use ib_core::{
         api_key::MockApiKeyRepository,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
-        project::{MockProjectRepository, Project, ProjectToken},
+        project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectMember, ProjectToken},
         types::Capabilities,
         user::{MockUserRepository, User, UserToken},
     };
@@ -723,6 +748,10 @@ mod tests {
     }
 
     fn fake_user(id: u64) -> User {
+        fake_user_with_caps(id, Capabilities(vec![ib_core::types::Capability::Admin]))
+    }
+
+    fn fake_user_with_caps(id: u64, capabilities: Capabilities) -> User {
         User {
             id,
             token: UserToken::new(id),
@@ -730,7 +759,7 @@ mod tests {
             full_name: "Alice".to_owned(),
             password_hash: "h".to_owned(),
             email_address: "alice@example.com".to_owned(),
-            capabilities: Capabilities::default(),
+            capabilities,
             change_password_on_login: false,
             version: 0,
             created_at: Utc::now(),
@@ -783,6 +812,26 @@ mod tests {
                 .project_repository(Arc::new(project_repo))
                 .issue_repository(Arc::new(issue_repo))
                 .artifact_repository(Arc::new(artifact_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    fn make_core_with_members(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        user_repo: MockUserRepository,
+        member_repo: ib_core::project::MockProjectMemberRepository,
+    ) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .project_member_repository(Arc::new(member_repo))
+                .issue_repository(Arc::new(issue_repo))
                 .build()
                 .unwrap(),
         );
@@ -879,6 +928,139 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_issues_non_member_returns_error() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user_with_caps(1, Capabilities::default());
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+
+        let core = make_core_with_members(project_repo, MockIssueRepository::new(), user_repo, member_repo);
+        let server = IssueBossServer::new(core, user);
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "myapp".to_string(),
+                status: None,
+                priority: None,
+                size: None,
+                limit: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_issues_insufficient_capability_returns_error() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user_with_caps(1, Capabilities::default());
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        // Member exists but has no capabilities
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let member = ProjectMember {
+                project_id: 1,
+                user_id: 1,
+                capabilities: Capabilities::default(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+            member_repo.expect_find().returning(move |_, _, _| {
+                let m = member.clone();
+                Box::pin(async move { Ok(Some(m)) })
+            });
+        }
+
+        let core = make_core_with_members(project_repo, MockIssueRepository::new(), user_repo, member_repo);
+        let server = IssueBossServer::new(core, user);
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "myapp".to_string(),
+                status: None,
+                priority: None,
+                size: None,
+                limit: None,
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_issue_non_member_returns_error() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user_with_caps(1, Capabilities::default());
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+
+        let core = make_core_with_members(project_repo, MockIssueRepository::new(), user_repo, member_repo);
+        let server = IssueBossServer::new(core, user);
+
+        let result = server
+            .create_issue(Parameters(CreateIssueParams {
+                project_slug: "myapp".to_string(),
+                title: "Test".to_string(),
+                description: None,
+                priority: None,
+                size: None,
             }))
             .await;
 
