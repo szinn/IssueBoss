@@ -13,10 +13,22 @@ async fn artifact_lifecycle() {
     // Setup: project + issue
     let project = fixtures::create_project(&ctx.services, "Artifact Test", "artifact-test", "ART").await;
     let issue = fixtures::create_issue(&ctx.services, project.id, "ART", "Test issue").await;
-    assert_eq!(issue.status, IssueStatus::Triage);
+    assert_eq!(issue.status, IssueStatus::TriageNeeded);
 
-    // Gate: Triage → SpecNeeded blocked without TriageResult
-    let err = ctx.services.issue_service().transition_issue(issue.token, IssueStatus::SpecNeeded, None).await;
+    // TriageNeeded → TriageInProgress (no gate — agent freely claims triage)
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::TriageInProgress, None)
+        .await
+        .unwrap();
+
+    // Gate: TriageInProgress → TriageReview blocked without TriageResult
+    let err = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::TriageReview, None)
+        .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
 
     // Add TriageResult — gate passes (slug auto-assigned by service)
@@ -34,43 +46,31 @@ async fn artifact_lifecycle() {
         .unwrap();
     assert_eq!(_triage.slug, Some("triage".to_string()));
 
+    // TriageInProgress → TriageReview (gate passes now that TriageResult exists)
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::SpecNeeded, Some("Triage done".into()))
+        .transition_issue(issue.token, IssueStatus::TriageReview, Some("Triage done".into()))
         .await
         .unwrap();
-    assert_eq!(issue.status, IssueStatus::SpecNeeded);
+    assert_eq!(issue.status, IssueStatus::TriageReview);
 
-    // StatusTransition artifact auto-created
+    // StatusTransition artifacts auto-created (one for
+    // TriageNeeded→TriageInProgress, one for TriageInProgress→TriageReview)
     let transitions = ctx
         .services
         .artifact_service()
         .list_artifacts(issue.id, Some(vec![ArtifactKind::StatusTransition]), false)
         .await
         .unwrap();
-    assert_eq!(transitions.len(), 1);
-    assert_eq!(transitions[0].body["from"], "Triage");
-    assert_eq!(transitions[0].body["to"], "SpecNeeded");
-    assert_eq!(transitions[0].body["reason"], "Triage done");
+    assert_eq!(transitions.len(), 2);
+    // Most recent: TriageInProgress → TriageReview
+    let review_transition = transitions.iter().find(|t| t.body["to"] == "TriageReview").unwrap();
+    assert_eq!(review_transition.body["from"], "TriageInProgress");
+    assert_eq!(review_transition.body["reason"], "Triage done");
 
-    // Human-driven: SpecNeeded → ResearchNeeded (no gate)
-    let issue = ctx
-        .services
-        .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchNeeded, None)
-        .await
-        .unwrap();
-
-    // Gate: no topics → blocked
-    let err = ctx
-        .services
-        .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchInProgress, None)
-        .await;
-    assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "no_research_topics"));
-
-    // Add a topic with explicit slug
+    // TriageReview → ResearchNeeded (gated: requires ResearchTopic)
+    // Add a ResearchTopic to enable → ResearchNeeded
     let topic = ctx
         .services
         .artifact_service()
@@ -88,15 +88,23 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
+        .transition_issue(issue.token, IssueStatus::ResearchNeeded, None)
+        .await
+        .unwrap();
+
+    // ResearchNeeded → ResearchInProgress gate: topics present, so allowed
+    let issue = ctx
+        .services
+        .issue_service()
         .transition_issue(issue.token, IssueStatus::ResearchInProgress, None)
         .await
         .unwrap();
 
-    // Gate: uncovered topic blocks ResearchInProgress → ResearchInReview
+    // Gate: uncovered topic blocks ResearchInProgress → ResearchReview
     let err = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchInReview, None)
+        .transition_issue(issue.token, IssueStatus::ResearchReview, None)
         .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
 
@@ -130,10 +138,10 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchInReview, None)
+        .transition_issue(issue.token, IssueStatus::ResearchReview, None)
         .await
         .unwrap();
-    assert_eq!(issue.status, IssueStatus::ResearchInReview);
+    assert_eq!(issue.status, IssueStatus::ResearchReview);
 }
 
 #[tokio::test]

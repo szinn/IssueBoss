@@ -48,7 +48,7 @@ impl IssueService for IssueServiceImpl {
                         number,
                         title: new_issue.title,
                         description: new_issue.description,
-                        status: IssueStatus::Triage,
+                        status: IssueStatus::TriageNeeded,
                         priority: new_issue.priority,
                         size: new_issue.size,
                         slug,
@@ -118,8 +118,61 @@ impl IssueService for IssueServiceImpl {
 
 fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[IssueArtifact]) -> Result<Option<String>, Error> {
     use ArtifactKind::*;
+
+    // ── Prerequisites for entering Needed states ────────────────────────────
+    // These fire for any (from, to) where `to` is a gated Needed state.
+    // The human is responsible for ensuring prerequisites exist, but the
+    // service enforces it as a safety net.
+    match to {
+        IssueStatus::ResearchNeeded => {
+            if !artifacts.iter().any(|a| a.kind == ResearchTopic) {
+                return Err(Error::GateFailure {
+                    condition: "no_research_topics".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            return Ok(Some("Research topics present".into()));
+        }
+        IssueStatus::SpecNeeded => {
+            if !artifacts.iter().any(|a| a.kind == TriageResult) {
+                return Err(Error::GateFailure {
+                    condition: "missing_triage_result".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            return Ok(Some("Ready for spec".into()));
+        }
+        IssueStatus::PlanNeeded => {
+            let has_triage_result = artifacts.iter().any(|a| a.kind == TriageResult);
+            let has_spec = artifacts.iter().any(|a| a.kind == Spec);
+            if !has_triage_result && !has_spec {
+                return Err(Error::GateFailure {
+                    condition: "missing_planning_input".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            return Ok(Some("Planning inputs available".into()));
+        }
+        IssueStatus::DevNeeded => {
+            if !artifacts.iter().any(|a| a.kind == Plan) {
+                return Err(Error::GateFailure {
+                    condition: "missing_plan".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            return Ok(Some("Ready for development".into()));
+        }
+        // TriageNeeded → TriageInProgress has no entry prerequisite — the agent
+        // freely claims triage work and produces TriageResult during the work.
+        _ => {}
+    }
+
+    // ── Completion gates for InProgress → Review ────────────────────────────
+    // DevInProgress → DevReview intentionally has no artifact gate here;
+    // development completion is a human-reviewed judgment call.
     match (from, to) {
-        (IssueStatus::Triage, IssueStatus::SpecNeeded) => {
+        // Triage agent must attach a TriageResult before moving to review.
+        (IssueStatus::TriageInProgress, IssueStatus::TriageReview) => {
             if !artifacts.iter().any(|a| a.kind == TriageResult) {
                 return Err(Error::GateFailure {
                     condition: "missing_triage_result".into(),
@@ -128,6 +181,7 @@ fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[Issu
             }
             Ok(Some("Triage result recorded".into()))
         }
+        // Agent should only claim research if there are uncovered topics.
         (IssueStatus::ResearchNeeded, IssueStatus::ResearchInProgress) => {
             let topics: Vec<_> = artifacts.iter().filter(|a| a.kind == ResearchTopic).collect();
             if topics.is_empty() {
@@ -150,7 +204,8 @@ fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[Issu
             }
             Ok(Some(format!("{} uncovered research topic(s)", uncovered.len())))
         }
-        (IssueStatus::ResearchInProgress, IssueStatus::ResearchInReview) => {
+        // All research topics must be covered before moving to review.
+        (IssueStatus::ResearchInProgress, IssueStatus::ResearchReview) => {
             let topics: Vec<_> = artifacts.iter().filter(|a| a.kind == ResearchTopic).collect();
             if topics.is_empty() {
                 return Err(Error::GateFailure {
@@ -172,7 +227,18 @@ fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[Issu
             }
             Ok(Some("All research topics covered".into()))
         }
-        (IssueStatus::PlanInProgress, IssueStatus::PlanInReview) => {
+        // Spec collaboration must produce a Spec artifact before review.
+        (IssueStatus::SpecInProgress, IssueStatus::SpecReview) => {
+            if !artifacts.iter().any(|a| a.kind == Spec) {
+                return Err(Error::GateFailure {
+                    condition: "missing_spec".into(),
+                    failing_tokens: vec![],
+                });
+            }
+            Ok(Some("Spec complete".into()))
+        }
+        // Plan agent must produce a Plan artifact before review.
+        (IssueStatus::PlanInProgress, IssueStatus::PlanReview) => {
             if !artifacts.iter().any(|a| a.kind == Plan) {
                 return Err(Error::GateFailure {
                     condition: "missing_plan".into(),
@@ -180,15 +246,6 @@ fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[Issu
                 });
             }
             Ok(Some("Plan complete".into()))
-        }
-        (IssueStatus::ReadyForDev, IssueStatus::InDev) => {
-            if !artifacts.iter().any(|a| a.kind == Plan) {
-                return Err(Error::GateFailure {
-                    condition: "missing_plan".into(),
-                    failing_tokens: vec![],
-                });
-            }
-            Ok(Some("Beginning development".into()))
         }
         _ => Ok(None),
     }
@@ -245,26 +302,11 @@ mod tests {
             project_id,
             title: format!("Issue {number}"),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}-issue-{number}"),
             version: 0,
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
-    fn fake_artifact(id: u64, issue_id: IssueId, kind: ArtifactKind) -> IssueArtifact {
-        let now = Utc::now();
-        IssueArtifact {
-            id,
-            token: ArtifactToken::new(id),
-            issue_id,
-            kind,
-            slug: None,
-            body: serde_json::json!({}),
-            created_by: "U_test".into(),
             created_at: now,
             updated_at: now,
         }
@@ -391,11 +433,10 @@ mod tests {
 
     #[tokio::test]
     async fn transition_issue_success() {
-        let issue = fake_issue(42, 1, 3); // status: Triage
-        let triage_artifact = fake_artifact(1, 42, ArtifactKind::TriageResult);
+        let issue = fake_issue(42, 1, 3); // status: TriageNeeded
         let transitioned = {
             let mut i = issue.clone();
-            i.status = IssueStatus::SpecNeeded;
+            i.status = IssueStatus::TriageInProgress;
             i
         };
         let mut issue_repo = MockIssueRepository::new();
@@ -410,20 +451,14 @@ mod tests {
             let t = transitioned.clone();
             issue_repo
                 .expect_update()
-                .withf(|_, i| i.status == IssueStatus::SpecNeeded)
+                .withf(|_, i| i.status == IssueStatus::TriageInProgress)
                 .returning(move |_, _| {
                     let t = t.clone();
                     Box::pin(async move { Ok(t) })
                 });
         }
         let mut artifact_repo = MockArtifactRepository::new();
-        {
-            let art = triage_artifact.clone();
-            artifact_repo.expect_list().returning(move |_, _, _| {
-                let a = art.clone();
-                Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
             Box::pin(async move {
                 Ok(IssueArtifact {
@@ -440,14 +475,14 @@ mod tests {
             })
         });
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().status, IssueStatus::SpecNeeded);
+        assert_eq!(result.unwrap().status, IssueStatus::TriageInProgress);
     }
 
     #[tokio::test]
     async fn transition_issue_illegal_transition_returns_validation_error() {
-        let issue = fake_issue(42, 1, 3); // status: Triage
+        let issue = fake_issue(42, 1, 3); // status: TriageNeeded
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
@@ -457,7 +492,7 @@ mod tests {
             });
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        // Triage → Done skips all intermediate steps — illegal
+        // TriageNeeded → Done skips all intermediate steps — illegal
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Done, None).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
@@ -467,13 +502,13 @@ mod tests {
         let mut issue_repo = MockIssueRepository::new();
         issue_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::SpecNeeded, None).await;
+        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::TriageInProgress, None).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
     #[tokio::test]
     async fn transition_issue_self_transition_is_validation_error() {
-        let issue = fake_issue(42, 1, 3); // status: Triage
+        let issue = fake_issue(42, 1, 3); // status: TriageNeeded
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
@@ -483,14 +518,15 @@ mod tests {
             });
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        // Triage → Triage is a self-transition — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::Triage, None).await;
+        // TriageNeeded → TriageNeeded is a self-transition — illegal
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageNeeded, None).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[tokio::test]
-    async fn transition_triage_to_spec_needed_blocked_without_triage_result() {
-        let issue = fake_issue(42, 1, 3); // Triage
+    async fn transition_triage_in_progress_to_review_blocked_without_triage_result() {
+        let mut issue = fake_issue(42, 1, 3);
+        issue.status = IssueStatus::TriageInProgress;
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
@@ -501,7 +537,25 @@ mod tests {
         }
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageReview, None).await;
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
+    }
 
+    #[tokio::test]
+    async fn transition_to_spec_needed_blocked_without_triage_result() {
+        let mut issue = fake_issue(42, 1, 3);
+        issue.status = IssueStatus::TriageReview; // valid source for → SpecNeeded
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None).await;
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
@@ -540,7 +594,7 @@ mod tests {
         }
 
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchInReview, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchReview, None).await;
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
     }
 }

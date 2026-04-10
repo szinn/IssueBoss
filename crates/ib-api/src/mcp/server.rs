@@ -123,7 +123,7 @@ struct MoveArtifactResultMcp {
 pub struct ListIssuesParams {
     /// Project slug, e.g. "issueboss"
     pub project_slug: String,
-    /// Filter by status, e.g. "Triage"
+    /// Filter by status, e.g. "TriageNeeded"
     pub status: Option<String>,
     /// Filter by priority, e.g. "High"
     pub priority: Option<String>,
@@ -165,10 +165,12 @@ pub struct UpdateIssueParams {
 pub struct TransitionIssueParams {
     /// Issue slug, e.g. "IB-5"
     pub slug: String,
-    /// Target status. Valid values: Triage, SpecNeeded, ResearchNeeded,
-    /// ResearchInProgress, ResearchInReview, ReadyForPlan, PlanInProgress,
-    /// PlanInReview, ReadyForDev, InDev, CodeReview, Done, Backlog,
-    /// Canceled
+    /// Target status. Valid values: TriageNeeded, TriageInProgress, TriageReview,
+    /// ResearchNeeded, ResearchInProgress, ResearchReview,
+    /// SpecNeeded, SpecInProgress, SpecReview,
+    /// PlanNeeded, PlanInProgress, PlanReview,
+    /// DevNeeded, DevInProgress, DevReview,
+    /// Done, Backlog, Canceled
     pub new_status: String,
     /// Optional reason for the transition, recorded in the StatusTransition
     /// artifact
@@ -421,9 +423,14 @@ impl IssueBossServer {
     }
 
     #[tool(
-        description = "Transition an issue to a new status. Pipeline order: Triage → SpecNeeded → ResearchNeeded → ResearchInProgress → ResearchInReview → \
-                       ReadyForPlan → PlanInProgress → PlanInReview → ReadyForDev → InDev → CodeReview → Done. Backlog and Canceled are reachable from most \
-                       states. Transitions must follow valid pipeline rules. Gated transitions require artifact prerequisites."
+        description = "Transition an issue to a new status. \
+                       Pipeline: TriageNeeded → TriageInProgress → TriageReview → \
+                       ResearchNeeded → ResearchInProgress → ResearchReview → \
+                       SpecNeeded → SpecInProgress → SpecReview → \
+                       PlanNeeded → PlanInProgress → PlanReview → \
+                       DevNeeded → DevInProgress → DevReview → Done. \
+                       Backlog and Canceled reachable from most states. \
+                       Gated transitions require artifact prerequisites."
     )]
     async fn transition_issue(&self, params: Parameters<TransitionIssueParams>) -> Result<String, McpError> {
         let p = params.0;
@@ -642,7 +649,7 @@ impl IssueBossServer {
 impl ServerHandler for IssueBossServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
-            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. Triage, InDev) to \
+            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. TriageNeeded, DevInProgress) to \
              efficiently query large projects. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects lists all accessible \
              projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
         )
@@ -743,7 +750,7 @@ mod tests {
             project_id,
             title: format!("Issue {number}"),
             description: String::new(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
@@ -1098,22 +1105,11 @@ mod tests {
             MockArtifactRepository,
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         };
-        let issue = fake_issue(10, 1, 1); // Triage
+        let issue = fake_issue(10, 1, 1); // TriageNeeded
         let transitioned = {
             let mut i = issue.clone();
-            i.status = IssueStatus::SpecNeeded;
+            i.status = IssueStatus::TriageInProgress;
             i
-        };
-        let triage_artifact = IssueArtifact {
-            id: 1,
-            token: ArtifactToken::new(1),
-            issue_id: 10,
-            kind: ArtifactKind::TriageResult,
-            slug: None,
-            body: serde_json::json!({"path": "insights/triage/tp-1.md"}),
-            created_by: "U_test".into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
         };
 
         let project_repo = MockProjectRepository::new();
@@ -1136,20 +1132,14 @@ mod tests {
             let t = transitioned.clone();
             issue_repo
                 .expect_update()
-                .withf(|_, i| i.status == IssueStatus::SpecNeeded)
+                .withf(|_, i| i.status == IssueStatus::TriageInProgress)
                 .returning(move |_, _| {
                     let t = t.clone();
                     Box::pin(async move { Ok(t) })
                 });
         }
         let mut artifact_repo = MockArtifactRepository::new();
-        {
-            let art = triage_artifact.clone();
-            artifact_repo.expect_list().returning(move |_, _, _| {
-                let a = art.clone();
-                Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
             Box::pin(async move {
                 Ok(IssueArtifact {
@@ -1172,14 +1162,14 @@ mod tests {
         let result = server
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-1".to_string(),
-                new_status: "SpecNeeded".to_string(),
+                new_status: "TriageInProgress".to_string(),
                 reason: None,
             }))
             .await;
 
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(json["issue"]["status"], "SpecNeeded");
+        assert_eq!(json["issue"]["status"], "TriageInProgress");
         assert!(json["completeness"].is_object());
     }
 
@@ -1195,7 +1185,7 @@ mod tests {
         let result = server
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-999".to_string(),
-                new_status: "SpecNeeded".to_string(),
+                new_status: "TriageInProgress".to_string(),
                 reason: None,
             }))
             .await;
@@ -1694,10 +1684,11 @@ mod tests {
     #[tokio::test]
     async fn transition_issue_gate_failure() {
         use ib_core::artifact::MockArtifactRepository;
-        // Issue is in Triage; transitioning to SpecNeeded requires a TriageResult
+        // Issue is in TriageInProgress; transitioning to TriageReview requires a TriageResult
         // artifact. With no artifacts, the gate fails and map_core_err must
         // encode a gate_failed payload.
-        let issue = fake_issue(10, 1, 1);
+        let mut issue = fake_issue(10, 1, 1);
+        issue.status = IssueStatus::TriageInProgress;
 
         let project_repo = MockProjectRepository::new();
         let mut issue_repo = MockIssueRepository::new();
@@ -1725,7 +1716,7 @@ mod tests {
         let result = server
             .transition_issue(Parameters(TransitionIssueParams {
                 slug: "TP-1".to_string(),
-                new_status: "SpecNeeded".to_string(),
+                new_status: "TriageReview".to_string(),
                 reason: None,
             }))
             .await;

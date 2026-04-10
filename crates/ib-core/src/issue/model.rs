@@ -28,20 +28,30 @@ pub type IssueToken = Token<IssueTokenPrefix, IssueId, { i64::MAX as u128 }>;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum IssueStatus {
-    Triage,
-    SpecNeeded,
+    // Triage category
+    TriageNeeded,
+    TriageInProgress,
+    TriageReview,
+    // Research category
     ResearchNeeded,
     ResearchInProgress,
-    ResearchInReview,
-    ReadyForPlan,
+    ResearchReview,
+    // Spec category
+    SpecNeeded,
+    SpecInProgress,
+    SpecReview,
+    // Plan category
+    PlanNeeded,
     PlanInProgress,
-    PlanInReview,
-    ReadyForDev,
-    InDev,
-    CodeReview,
-    Done,
+    PlanReview,
+    // Dev category
+    DevNeeded,
+    DevInProgress,
+    DevReview,
+    // Off-pipeline
     Backlog,
     Canceled,
+    Done,
 }
 
 impl fmt::Display for IssueStatus {
@@ -54,20 +64,24 @@ impl FromStr for IssueStatus {
     type Err = ParseEnumError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "Triage" => Ok(Self::Triage),
-            "SpecNeeded" => Ok(Self::SpecNeeded),
+            "TriageNeeded" => Ok(Self::TriageNeeded),
+            "TriageInProgress" => Ok(Self::TriageInProgress),
+            "TriageReview" => Ok(Self::TriageReview),
             "ResearchNeeded" => Ok(Self::ResearchNeeded),
             "ResearchInProgress" => Ok(Self::ResearchInProgress),
-            "ResearchInReview" => Ok(Self::ResearchInReview),
-            "ReadyForPlan" => Ok(Self::ReadyForPlan),
+            "ResearchReview" => Ok(Self::ResearchReview),
+            "SpecNeeded" => Ok(Self::SpecNeeded),
+            "SpecInProgress" => Ok(Self::SpecInProgress),
+            "SpecReview" => Ok(Self::SpecReview),
+            "PlanNeeded" => Ok(Self::PlanNeeded),
             "PlanInProgress" => Ok(Self::PlanInProgress),
-            "PlanInReview" => Ok(Self::PlanInReview),
-            "ReadyForDev" => Ok(Self::ReadyForDev),
-            "InDev" => Ok(Self::InDev),
-            "CodeReview" => Ok(Self::CodeReview),
-            "Done" => Ok(Self::Done),
+            "PlanReview" => Ok(Self::PlanReview),
+            "DevNeeded" => Ok(Self::DevNeeded),
+            "DevInProgress" => Ok(Self::DevInProgress),
+            "DevReview" => Ok(Self::DevReview),
             "Backlog" => Ok(Self::Backlog),
             "Canceled" => Ok(Self::Canceled),
+            "Done" => Ok(Self::Done),
             _ => Err(ParseEnumError(s.to_owned())),
         }
     }
@@ -216,62 +230,73 @@ pub fn derive_issue_slug(prefix: &str, number: u32) -> String {
 }
 
 impl IssueStatus {
-    /// Returns the position of this status in the pipeline sequence.
-    /// Backlog and Canceled are off-chain and return None.
-    fn pipeline_index(&self) -> Option<usize> {
-        match self {
-            Self::Triage => Some(0),
-            Self::SpecNeeded => Some(1),
-            Self::ResearchNeeded => Some(2),
-            Self::ResearchInProgress => Some(3),
-            Self::ResearchInReview => Some(4),
-            Self::ReadyForPlan => Some(5),
-            Self::PlanInProgress => Some(6),
-            Self::PlanInReview => Some(7),
-            Self::ReadyForDev => Some(8),
-            Self::InDev => Some(9),
-            Self::CodeReview => Some(10),
-            Self::Done => Some(11),
-            Self::Backlog | Self::Canceled => None,
-        }
-    }
-
-    /// Determines if this status can transition to the given `next` status.
+    /// Returns `true` if transitioning from `self` to `next` is a legal move.
     ///
-    /// Rules:
-    /// - Self-transition (same state → same state) is never allowed
-    /// - Canceled is terminal (no outgoing transitions)
-    /// - Any non-Canceled state → Backlog or Canceled is always allowed
-    /// - From Backlog: any pipeline state is reachable (reactivation)
-    /// - In-pipeline: forward moves are adjacent-only (index + 1); backward
-    ///   moves are unrestricted (any earlier index)
+    /// Rules encoded as an explicit allow-list:
+    /// - Self-transition is never valid.
+    /// - `Done` is truly terminal — no transitions out.
+    /// - `Canceled` → `Backlog` or `TriageNeeded` only (reactivation).
+    /// - Any non-Done, non-Canceled state → `Backlog` or `Canceled` always
+    ///   allowed.
+    /// - `Backlog` → any Needed state (reactivation).
+    /// - Within categories: Needed → InProgress → Review.
+    /// - From Review: can route to own Needed or specific later Needed states
+    ///   per the routing table (no Review routes to an earlier category).
+    ///   TriageReview → any Needed; ResearchReview → Research/Spec/Plan/Dev;
+    ///   SpecReview → Research/Spec/Plan; PlanReview → Plan/Dev; DevReview →
+    ///   Dev or Done.
+    /// - `DevReview` → `Done` terminates the issue.
     pub fn can_transition_to(&self, next: &Self) -> bool {
-        // Self-transition is never valid
         if self == next {
             return false;
         }
-        // Canceled is terminal
-        if matches!(self, Self::Canceled) {
+        if matches!(self, Self::Done) {
             return false;
         }
-        // Any non-Canceled state can go to Backlog or Canceled
+        if matches!(self, Self::Canceled) {
+            return matches!(next, Self::Backlog | Self::TriageNeeded);
+        }
         if matches!(next, Self::Backlog | Self::Canceled) {
             return true;
         }
-        // From Backlog: any pipeline state is reachable (next is not Backlog/Canceled
-        // here)
         if matches!(self, Self::Backlog) {
-            return next.pipeline_index().is_some();
+            return matches!(
+                next,
+                Self::TriageNeeded | Self::ResearchNeeded | Self::SpecNeeded | Self::PlanNeeded | Self::DevNeeded
+            );
         }
-        // Triage can skip directly to ReadyForPlan (no spec/research needed)
-        if matches!(self, Self::Triage) && matches!(next, Self::ReadyForPlan) {
-            return true;
-        }
-        // Both in the pipeline: adjacent-forward or any-backward
-        match (self.pipeline_index(), next.pipeline_index()) {
-            (Some(from), Some(to)) => to == from + 1 || to < from,
-            _ => false,
-        }
+        matches!(
+            (self, next),
+            // Needed → InProgress
+            (Self::TriageNeeded,    Self::TriageInProgress)
+            | (Self::ResearchNeeded,  Self::ResearchInProgress)
+            | (Self::SpecNeeded,      Self::SpecInProgress)
+            | (Self::PlanNeeded,      Self::PlanInProgress)
+            | (Self::DevNeeded,       Self::DevInProgress)
+            // InProgress → Review
+            | (Self::TriageInProgress,    Self::TriageReview)
+            | (Self::ResearchInProgress,  Self::ResearchReview)
+            | (Self::SpecInProgress,      Self::SpecReview)
+            | (Self::PlanInProgress,      Self::PlanReview)
+            | (Self::DevInProgress,       Self::DevReview)
+            // Review → Needed (routing layer)
+            | (Self::TriageReview,    Self::TriageNeeded)
+            | (Self::TriageReview,    Self::ResearchNeeded)
+            | (Self::TriageReview,    Self::SpecNeeded)
+            | (Self::TriageReview,    Self::PlanNeeded)
+            | (Self::TriageReview,    Self::DevNeeded)
+            | (Self::ResearchReview,  Self::ResearchNeeded)
+            | (Self::ResearchReview,  Self::SpecNeeded)
+            | (Self::ResearchReview,  Self::PlanNeeded)
+            | (Self::ResearchReview,  Self::DevNeeded)
+            | (Self::SpecReview,      Self::ResearchNeeded)
+            | (Self::SpecReview,      Self::SpecNeeded)
+            | (Self::SpecReview,      Self::PlanNeeded)
+            | (Self::PlanReview,      Self::PlanNeeded)
+            | (Self::PlanReview,      Self::DevNeeded)
+            | (Self::DevReview,       Self::DevNeeded)
+            | (Self::DevReview,       Self::Done)
+        )
     }
 }
 
@@ -310,20 +335,24 @@ mod tests {
     #[test]
     fn issue_status_roundtrips_via_display_and_fromstr() {
         for s in [
-            IssueStatus::Triage,
-            IssueStatus::SpecNeeded,
+            IssueStatus::TriageNeeded,
+            IssueStatus::TriageInProgress,
+            IssueStatus::TriageReview,
             IssueStatus::ResearchNeeded,
             IssueStatus::ResearchInProgress,
-            IssueStatus::ResearchInReview,
-            IssueStatus::ReadyForPlan,
+            IssueStatus::ResearchReview,
+            IssueStatus::SpecNeeded,
+            IssueStatus::SpecInProgress,
+            IssueStatus::SpecReview,
+            IssueStatus::PlanNeeded,
             IssueStatus::PlanInProgress,
-            IssueStatus::PlanInReview,
-            IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
-            IssueStatus::CodeReview,
-            IssueStatus::Done,
+            IssueStatus::PlanReview,
+            IssueStatus::DevNeeded,
+            IssueStatus::DevInProgress,
+            IssueStatus::DevReview,
             IssueStatus::Backlog,
             IssueStatus::Canceled,
+            IssueStatus::Done,
         ] {
             let displayed = s.to_string();
             let parsed: IssueStatus = displayed.parse().expect("should parse");
@@ -360,7 +389,7 @@ mod tests {
             project_id: 1,
             title: "t".into(),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: "BB-42".into(),
@@ -374,127 +403,127 @@ mod tests {
     #[test]
     fn self_transition_is_always_denied() {
         for s in [
-            IssueStatus::Triage,
-            IssueStatus::InDev,
-            IssueStatus::Done,
+            IssueStatus::TriageNeeded,
+            IssueStatus::TriageInProgress,
+            IssueStatus::TriageReview,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::ResearchInProgress,
+            IssueStatus::ResearchReview,
+            IssueStatus::SpecNeeded,
+            IssueStatus::SpecInProgress,
+            IssueStatus::SpecReview,
+            IssueStatus::PlanNeeded,
+            IssueStatus::PlanInProgress,
+            IssueStatus::PlanReview,
+            IssueStatus::DevNeeded,
+            IssueStatus::DevInProgress,
+            IssueStatus::DevReview,
             IssueStatus::Backlog,
             IssueStatus::Canceled,
+            IssueStatus::Done,
         ] {
-            assert!(!s.can_transition_to(&s.clone()), "self-transition should be denied for {s:?}");
+            assert!(!s.can_transition_to(&s.clone()), "{s:?} → {s:?} should be denied");
         }
     }
 
     #[test]
-    fn canceled_is_terminal() {
+    fn done_is_truly_terminal() {
         for next in [
-            IssueStatus::Triage,
-            IssueStatus::SpecNeeded,
-            IssueStatus::ResearchNeeded,
-            IssueStatus::ResearchInProgress,
-            IssueStatus::ResearchInReview,
-            IssueStatus::ReadyForPlan,
-            IssueStatus::PlanInProgress,
-            IssueStatus::PlanInReview,
-            IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
-            IssueStatus::CodeReview,
-            IssueStatus::Done,
+            IssueStatus::TriageNeeded,
             IssueStatus::Backlog,
-        ] {
-            assert!(!IssueStatus::Canceled.can_transition_to(&next), "Canceled → {next:?} should be denied");
-        }
-    }
-
-    #[test]
-    fn any_non_canceled_state_can_go_to_backlog() {
-        for s in [
-            IssueStatus::Triage,
-            IssueStatus::SpecNeeded,
-            IssueStatus::ResearchInProgress,
-            IssueStatus::InDev,
-            IssueStatus::Done,
-        ] {
-            assert!(s.can_transition_to(&IssueStatus::Backlog), "{s:?} → Backlog should be allowed");
-        }
-    }
-
-    #[test]
-    fn any_non_canceled_state_can_go_to_canceled() {
-        for s in [IssueStatus::Triage, IssueStatus::InDev, IssueStatus::Done, IssueStatus::Backlog] {
-            assert!(s.can_transition_to(&IssueStatus::Canceled), "{s:?} → Canceled should be allowed");
-        }
-    }
-
-    #[test]
-    fn backlog_can_go_to_any_pipeline_state() {
-        for next in [
-            IssueStatus::Triage,
-            IssueStatus::SpecNeeded,
+            IssueStatus::Canceled,
+            IssueStatus::DevNeeded,
             IssueStatus::ResearchNeeded,
-            IssueStatus::ResearchInProgress,
-            IssueStatus::ResearchInReview,
-            IssueStatus::ReadyForPlan,
-            IssueStatus::PlanInProgress,
-            IssueStatus::PlanInReview,
-            IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
-            IssueStatus::CodeReview,
-            IssueStatus::Done,
         ] {
-            assert!(IssueStatus::Backlog.can_transition_to(&next), "Backlog → {next:?} should be allowed");
+            assert!(!IssueStatus::Done.can_transition_to(&next), "Done → {next:?} should be denied");
         }
     }
 
     #[test]
-    fn forward_adjacent_moves_are_allowed() {
-        let chain = [
-            IssueStatus::Triage,
-            IssueStatus::SpecNeeded,
+    fn canceled_can_only_reactivate() {
+        assert!(IssueStatus::Canceled.can_transition_to(&IssueStatus::Backlog));
+        assert!(IssueStatus::Canceled.can_transition_to(&IssueStatus::TriageNeeded));
+        assert!(!IssueStatus::Canceled.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(!IssueStatus::Canceled.can_transition_to(&IssueStatus::Done));
+        assert!(!IssueStatus::Canceled.can_transition_to(&IssueStatus::SpecNeeded));
+    }
+
+    #[test]
+    fn any_active_state_can_go_to_backlog_or_canceled() {
+        // Pipeline states can always go to Backlog or Canceled
+        for from in [
+            IssueStatus::TriageNeeded,
+            IssueStatus::TriageInProgress,
+            IssueStatus::TriageReview,
             IssueStatus::ResearchNeeded,
-            IssueStatus::ResearchInProgress,
-            IssueStatus::ResearchInReview,
-            IssueStatus::ReadyForPlan,
             IssueStatus::PlanInProgress,
-            IssueStatus::PlanInReview,
-            IssueStatus::ReadyForDev,
-            IssueStatus::InDev,
-            IssueStatus::CodeReview,
-            IssueStatus::Done,
-        ];
-        for window in chain.windows(2) {
-            let from = &window[0];
-            let to = &window[1];
-            assert!(from.can_transition_to(to), "{from:?} → {to:?} (adjacent forward) should be allowed");
+            IssueStatus::DevReview,
+        ] {
+            assert!(from.can_transition_to(&IssueStatus::Backlog), "{from:?} → Backlog should be allowed");
+            assert!(from.can_transition_to(&IssueStatus::Canceled), "{from:?} → Canceled should be allowed");
         }
+        // Backlog can go to Canceled (but not itself — self-transition is denied)
+        assert!(IssueStatus::Backlog.can_transition_to(&IssueStatus::Canceled));
     }
 
     #[test]
-    fn triage_can_skip_to_ready_for_plan() {
-        assert!(IssueStatus::Triage.can_transition_to(&IssueStatus::ReadyForPlan));
+    fn backlog_can_reach_any_needed_state() {
+        for needed in [
+            IssueStatus::TriageNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::SpecNeeded,
+            IssueStatus::PlanNeeded,
+            IssueStatus::DevNeeded,
+        ] {
+            assert!(IssueStatus::Backlog.can_transition_to(&needed), "Backlog → {needed:?} should be allowed");
+        }
+        assert!(!IssueStatus::Backlog.can_transition_to(&IssueStatus::TriageInProgress));
+        assert!(!IssueStatus::Backlog.can_transition_to(&IssueStatus::DevReview));
+        assert!(!IssueStatus::Backlog.can_transition_to(&IssueStatus::Done));
     }
 
     #[test]
-    fn forward_skip_moves_are_denied() {
-        assert!(!IssueStatus::Triage.can_transition_to(&IssueStatus::ResearchNeeded));
-        assert!(!IssueStatus::Triage.can_transition_to(&IssueStatus::PlanInProgress));
-        assert!(!IssueStatus::ReadyForDev.can_transition_to(&IssueStatus::CodeReview));
-        assert!(!IssueStatus::PlanInProgress.can_transition_to(&IssueStatus::ReadyForDev));
+    fn needed_transitions_only_to_own_inprogress() {
+        assert!(IssueStatus::TriageNeeded.can_transition_to(&IssueStatus::TriageInProgress));
+        assert!(!IssueStatus::TriageNeeded.can_transition_to(&IssueStatus::ResearchInProgress));
+        assert!(!IssueStatus::TriageNeeded.can_transition_to(&IssueStatus::TriageReview));
+        assert!(IssueStatus::DevNeeded.can_transition_to(&IssueStatus::DevInProgress));
+        assert!(!IssueStatus::DevNeeded.can_transition_to(&IssueStatus::PlanInProgress));
     }
 
     #[test]
-    fn backward_moves_to_any_earlier_state_are_allowed() {
-        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::SpecNeeded));
-        assert!(IssueStatus::PlanInReview.can_transition_to(&IssueStatus::ReadyForPlan));
-        assert!(IssueStatus::Done.can_transition_to(&IssueStatus::Triage));
-        assert!(IssueStatus::InDev.can_transition_to(&IssueStatus::ResearchNeeded));
+    fn inprogress_transitions_only_to_own_review() {
+        assert!(IssueStatus::TriageInProgress.can_transition_to(&IssueStatus::TriageReview));
+        assert!(!IssueStatus::TriageInProgress.can_transition_to(&IssueStatus::ResearchReview));
+        assert!(!IssueStatus::TriageInProgress.can_transition_to(&IssueStatus::TriageNeeded));
+        assert!(IssueStatus::PlanInProgress.can_transition_to(&IssueStatus::PlanReview));
+        assert!(!IssueStatus::PlanInProgress.can_transition_to(&IssueStatus::DevReview));
     }
 
     #[test]
-    fn spec_examples_from_design_doc() {
-        assert!(IssueStatus::SpecNeeded.can_transition_to(&IssueStatus::ResearchNeeded));
-        assert!(IssueStatus::ResearchNeeded.can_transition_to(&IssueStatus::ResearchInProgress));
-        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::SpecNeeded));
-        assert!(IssueStatus::ResearchInProgress.can_transition_to(&IssueStatus::ResearchInReview));
-        assert!(IssueStatus::ResearchInReview.can_transition_to(&IssueStatus::ReadyForPlan));
+    fn triage_review_routes_to_any_needed() {
+        for needed in [
+            IssueStatus::TriageNeeded,
+            IssueStatus::ResearchNeeded,
+            IssueStatus::SpecNeeded,
+            IssueStatus::PlanNeeded,
+            IssueStatus::DevNeeded,
+        ] {
+            assert!(IssueStatus::TriageReview.can_transition_to(&needed));
+        }
+        assert!(!IssueStatus::TriageReview.can_transition_to(&IssueStatus::TriageInProgress));
+        assert!(!IssueStatus::TriageReview.can_transition_to(&IssueStatus::Done));
+    }
+
+    #[test]
+    fn review_does_not_route_to_earlier_categories() {
+        assert!(!IssueStatus::SpecReview.can_transition_to(&IssueStatus::TriageNeeded));
+        assert!(!IssueStatus::ResearchReview.can_transition_to(&IssueStatus::TriageNeeded));
+        assert!(!IssueStatus::PlanReview.can_transition_to(&IssueStatus::SpecNeeded));
+        assert!(!IssueStatus::PlanReview.can_transition_to(&IssueStatus::ResearchNeeded));
+        assert!(!IssueStatus::PlanReview.can_transition_to(&IssueStatus::TriageNeeded));
+        assert!(IssueStatus::DevReview.can_transition_to(&IssueStatus::DevNeeded));
+        assert!(IssueStatus::DevReview.can_transition_to(&IssueStatus::Done));
+        assert!(!IssueStatus::DevReview.can_transition_to(&IssueStatus::PlanNeeded));
     }
 }

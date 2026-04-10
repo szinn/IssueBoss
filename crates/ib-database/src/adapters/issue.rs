@@ -30,7 +30,7 @@ impl From<issues::Model> for Issue {
             project_id: model.project_id as u64,
             title: model.title,
             description: model.description,
-            status: model.status.parse().unwrap_or(ib_core::issue::IssueStatus::Triage),
+            status: model.status.parse().unwrap_or(ib_core::issue::IssueStatus::TriageNeeded),
             priority: model.priority.parse().unwrap_or_default(),
             size: model.size.and_then(|s| s.parse().ok()),
             slug: model.slug,
@@ -171,7 +171,7 @@ mod tests {
             number,
             title: "Fix login".into(),
             description: "desc".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::High,
             size: None,
             slug: format!("MA-{number}"),
@@ -198,7 +198,7 @@ mod tests {
             number,
             title: "Slug test".into(),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("ST-{number}"),
@@ -228,7 +228,7 @@ mod tests {
                 number,
                 title: title.into(),
                 description: "".into(),
-                status: IssueStatus::Triage,
+                status: IssueStatus::TriageNeeded,
                 priority,
                 size: None,
                 slug: format!("PR-{number}"),
@@ -257,7 +257,7 @@ mod tests {
             number,
             title: "Old title".into(),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: "UP-1".into(),
@@ -286,7 +286,7 @@ mod tests {
             number,
             title: "Issue".into(),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: "CF-1".into(),
@@ -324,7 +324,7 @@ mod tests {
             .await
             .unwrap();
 
-        for status in [IssueStatus::Triage, IssueStatus::InDev, IssueStatus::Done] {
+        for status in [IssueStatus::TriageNeeded, IssueStatus::DevInProgress, IssueStatus::Done] {
             let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
             let record = NewIssueRecord {
                 project_id: project.id,
@@ -340,11 +340,11 @@ mod tests {
         }
 
         let filter = IssueFilter {
-            status: Some(IssueStatus::InDev),
+            status: Some(IssueStatus::DevInProgress),
             ..Default::default()
         };
         let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
         assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].status, IssueStatus::InDev);
+        assert_eq!(issues[0].status, IssueStatus::DevInProgress);
     }
 }

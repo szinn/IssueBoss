@@ -273,7 +273,7 @@ mod tests {
             project_id,
             title: format!("Issue {number}"),
             description: "".into(),
-            status: IssueStatus::Triage,
+            status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
@@ -366,22 +366,11 @@ mod tests {
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         };
         let project = fake_project(1, "myapp", "MA");
-        let issue_before = fake_issue(100, 1, 1); // status: Triage
+        let issue_before = fake_issue(100, 1, 1); // status: TriageNeeded
         let issue_after = {
             let mut i = issue_before.clone();
-            i.status = IssueStatus::SpecNeeded;
+            i.status = IssueStatus::TriageInProgress;
             i
-        };
-        let triage_artifact = IssueArtifact {
-            id: 1,
-            token: ArtifactToken::new(1),
-            issue_id: 100,
-            kind: ArtifactKind::TriageResult,
-            slug: None,
-            body: serde_json::json!({"path": "insights/triage/tp-1.md"}),
-            created_by: "U_test".into(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
         };
         let mut project_repo = MockProjectRepository::new();
         {
@@ -419,20 +408,14 @@ mod tests {
             let i = issue_after.clone();
             issue_repo
                 .expect_update()
-                .withf(|_, issue| issue.status == IssueStatus::SpecNeeded)
+                .withf(|_, issue| issue.status == IssueStatus::TriageInProgress)
                 .returning(move |_, _| {
                     let i = i.clone();
                     Box::pin(async move { Ok(i) })
                 });
         }
         let mut artifact_repo = MockArtifactRepository::new();
-        {
-            let art = triage_artifact.clone();
-            artifact_repo.expect_list().returning(move |_, _, _| {
-                let a = art.clone();
-                Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
             Box::pin(async move {
                 Ok(IssueArtifact {
@@ -464,18 +447,18 @@ mod tests {
             &core,
             crate::grpc::admin_proto::TransitionIssueRequest {
                 slug: "MA-1".into(),
-                new_status: "SpecNeeded".into(),
+                new_status: "TriageInProgress".into(),
             },
         )
         .await
         .unwrap();
-        assert_eq!(resp.status, "SpecNeeded");
+        assert_eq!(resp.status, "TriageInProgress");
     }
 
     #[tokio::test]
     async fn transition_issue_illegal_transition_returns_invalid_argument() {
         let project = fake_project(1, "myapp", "MA");
-        let issue = fake_issue(100, 1, 1); // status: Triage
+        let issue = fake_issue(100, 1, 1); // status: TriageNeeded
         let mut project_repo = MockProjectRepository::new();
         {
             let p = project.clone();
@@ -510,7 +493,7 @@ mod tests {
                 .unwrap(),
         );
         let core = ib_core::create_services(repo_svc);
-        // Triage → Done is an illegal skip
+        // TriageNeeded → Done is an illegal skip
         let err = handler::transition_issue(
             &core,
             crate::grpc::admin_proto::TransitionIssueRequest {
