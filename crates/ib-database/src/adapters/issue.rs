@@ -593,7 +593,8 @@ mod tests {
         let result = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
 
         // canceled_blocker has no dependencies of its own, so it passes the filter.
-        // issue is excluded because it depends on canceled_blocker (Canceled != Done, so still an active block).
+        // issue is excluded because it depends on canceled_blocker (Canceled != Done,
+        // so still an active block).
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].slug, canceled_blocker.slug);
     }

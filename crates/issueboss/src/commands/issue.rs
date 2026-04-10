@@ -52,6 +52,8 @@ pub(crate) struct ListArgs {
     pub size: Option<String>,
     #[arg(long)]
     pub limit: Option<u64>,
+    #[arg(long)]
+    pub exclude_blocked: Option<bool>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -125,6 +127,7 @@ async fn cmd_list(host: &str, port: u16, args: ListArgs) -> anyhow::Result<()> {
         args.priority.as_deref(),
         args.size.as_deref(),
         args.limit,
+        args.exclude_blocked,
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;

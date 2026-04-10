@@ -165,6 +165,9 @@ pub struct ListIssuesParams {
     pub size: Option<String>,
     /// Max results to return
     pub limit: Option<u64>,
+    /// When true, omit issues blocked by at least one non-Done dependency
+    /// (Canceled dependencies still count as active blockers)
+    pub exclude_blocked: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -431,7 +434,7 @@ impl IssueBossServer {
                 .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
                 .transpose()?,
             limit: p.limit,
-            exclude_blocked: None,
+            exclude_blocked: p.exclude_blocked,
         };
 
         let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;
@@ -1045,6 +1048,7 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+                exclude_blocked: None,
             }))
             .await;
 
@@ -1070,6 +1074,7 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+                exclude_blocked: None,
             }))
             .await;
 
@@ -1099,6 +1104,7 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+                exclude_blocked: None,
             }))
             .await;
 
@@ -1139,6 +1145,7 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+                exclude_blocked: None,
             }))
             .await;
 
@@ -1192,6 +1199,7 @@ mod tests {
                 priority: None,
                 size: None,
                 limit: None,
+                exclude_blocked: None,
             }))
             .await;
 
@@ -2593,5 +2601,20 @@ mod tests {
         assert_eq!(json["depends_on"][0]["slug"], "TP-2");
         assert!(json["blocks"].as_array().unwrap().is_empty());
         assert!(json["related_to"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_issues_exclude_blocked_param_accepted() {
+        let json = r#"{"project_slug": "ib", "exclude_blocked": true}"#;
+        let params: ListIssuesParams = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(params.exclude_blocked, Some(true));
+
+        let json_false = r#"{"project_slug": "ib", "exclude_blocked": false}"#;
+        let params_false: ListIssuesParams = serde_json::from_str(json_false).expect("should deserialize");
+        assert_eq!(params_false.exclude_blocked, Some(false));
+
+        let json_omit = r#"{"project_slug": "ib"}"#;
+        let params_omit: ListIssuesParams = serde_json::from_str(json_omit).expect("should deserialize");
+        assert_eq!(params_omit.exclude_blocked, None);
     }
 }

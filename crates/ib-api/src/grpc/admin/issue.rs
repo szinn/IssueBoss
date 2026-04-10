@@ -113,7 +113,7 @@ pub(crate) mod handler {
                 .map(|s| s.parse().map_err(|_| Error::Validation(format!("unknown size: {s}"))))
                 .transpose()?,
             limit: req.limit,
-            exclude_blocked: None,
+            exclude_blocked: req.exclude_blocked,
         };
         let issues = core.issue_service().list_issues(project.id, filter).await?;
         let mut responses = Vec::with_capacity(issues.len());
@@ -198,6 +198,7 @@ pub mod api {
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_issues(
         host: &str,
         port: u16,
@@ -206,6 +207,7 @@ pub mod api {
         priority: Option<&str>,
         size: Option<&str>,
         limit: Option<u64>,
+        exclude_blocked: Option<bool>,
     ) -> Result<ListIssuesResponse, Error> {
         let mut client: AdminServiceClient<Channel> = make_client(host, port).await?;
         let req = with_api_key(tonic::Request::new(ListIssuesRequest {
@@ -214,6 +216,7 @@ pub mod api {
             priority: priority.map(str::to_owned),
             size: size.map(str::to_owned),
             limit,
+            exclude_blocked,
         }));
         client
             .list_issues(req)
@@ -691,6 +694,7 @@ mod tests {
             priority: None,
             size: None,
             limit: None,
+            exclude_blocked: None,
         });
         let err = svc.list_issues(req).await.unwrap_err();
         assert_eq!(err.code(), Code::NotFound);

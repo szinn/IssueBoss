@@ -211,11 +211,12 @@ message GetIssueRequest {
 }
 
 message ListIssuesRequest {
-  string          project_slug = 1;
-  optional string status       = 2;
-  optional string priority     = 3;
-  optional string size         = 4;
-  optional uint64 limit        = 5;
+  string          project_slug    = 1;
+  optional string status          = 2;
+  optional string priority        = 3;
+  optional string size            = 4;
+  optional uint64 limit           = 5;
+  optional bool   exclude_blocked = 6;
 }
 
 message ListIssuesResponse {
