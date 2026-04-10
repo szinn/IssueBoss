@@ -1,4 +1,5 @@
 pub(crate) mod api_key;
+pub(crate) mod artifact;
 pub(crate) mod issue;
 pub(crate) mod project;
 pub(crate) mod server;
@@ -52,6 +53,9 @@ pub(crate) enum Commands {
 
     #[command(about = "Manage issues", display_order = 45)]
     Issue(issue::IssueArgs),
+
+    #[command(about = "Manage artifacts", display_order = 47)]
+    Artifact(artifact::ArtifactArgs),
 
     #[command(about = "Manage API keys", display_order = 50, name = "api-key")]
     ApiKey(api_key::ApiKeyArgs),

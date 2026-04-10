@@ -52,6 +52,7 @@ pub(crate) mod handler {
         let body: serde_json::Value = serde_json::from_str(&req.body_json).map_err(|e| Error::Validation(format!("invalid body_json: {e}")))?;
         let artifact = core
             .artifact_service()
+            // artifact_number is uint32 in proto; ArtifactId is u64 — widening cast, always safe
             .update_artifact_by_id(issue.id, req.artifact_number as u64, body)
             .await?;
         Ok(artifact_to_proto(artifact))
@@ -63,6 +64,8 @@ pub(crate) mod handler {
             .find_by_slug(&req.issue_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+        // artifact_number is uint32 in proto; ArtifactId is u64 — widening cast, always
+        // safe
         core.artifact_service().remove_artifact_by_id(issue.id, req.artifact_number as u64).await
     }
 
