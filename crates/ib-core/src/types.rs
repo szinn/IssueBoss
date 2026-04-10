@@ -16,7 +16,6 @@ pub enum Capability {
     ViewIssues,
     CreateIssues,
     UpdateIssues,
-    TransitionStatus,
     ManageLabels,
     ManageMembers,
 }
@@ -74,7 +73,6 @@ mod tests {
         assert!(caps.has(Capability::ViewIssues));
         assert!(caps.has(Capability::CreateIssues));
         assert!(caps.has(Capability::UpdateIssues));
-        assert!(caps.has(Capability::TransitionStatus));
         assert!(caps.has(Capability::ManageLabels));
         assert!(caps.has(Capability::ManageMembers));
         // Admin does not implicitly grant SuperAdmin
@@ -87,7 +85,6 @@ mod tests {
         assert!(caps.has(Capability::ViewIssues));
         assert!(caps.has(Capability::CreateIssues));
         assert!(caps.has(Capability::UpdateIssues));
-        assert!(caps.has(Capability::TransitionStatus));
         assert!(caps.has(Capability::ManageLabels));
         assert!(caps.has(Capability::ManageMembers));
         // SuperAdmin does not implicitly grant Admin
