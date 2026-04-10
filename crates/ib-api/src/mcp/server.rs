@@ -181,7 +181,7 @@ pub struct TransitionIssueParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct AddArtifactParams {
     /// Issue slug, e.g. "IB-42"
-    slug: String,
+    issue_slug: String,
     /// Artifact kind: TriageResult, Spec, Research, Plan, ResearchTopic,
     /// Comment, Handoff
     kind: String,
@@ -215,7 +215,7 @@ struct RemoveArtifactParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct ListArtifactsParams {
     /// Issue slug, e.g. "IB-42"
-    slug: String,
+    issue_slug: String,
     /// Optional list of kinds to filter by (e.g. ["Research", "ResearchTopic"])
     kinds: Option<Vec<String>>,
     /// When true, only return ResearchTopics with no corresponding Research
@@ -504,10 +504,10 @@ impl IssueBossServer {
         let issue = self
             .core
             .issue_service()
-            .find_by_slug(&p.slug)
+            .find_by_slug(&p.issue_slug)
             .await
             .map_err(map_core_err)?
-            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
         self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
         let artifact = self
             .core
@@ -572,10 +572,10 @@ impl IssueBossServer {
         let issue = self
             .core
             .issue_service()
-            .find_by_slug(&p.slug)
+            .find_by_slug(&p.issue_slug)
             .await
             .map_err(map_core_err)?
-            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.slug), None))?;
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
         self.require_capability(issue.project_id, Capability::ViewIssues).await?;
         let kinds = p
             .kinds
@@ -1596,7 +1596,7 @@ mod tests {
 
         let result = server
             .add_artifact(Parameters(AddArtifactParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kind: "Comment".to_string(),
                 artifact_slug: Some("my-comment".to_string()),
                 body: serde_json::json!({"text": "hello"}),
@@ -1622,7 +1622,7 @@ mod tests {
 
         let result = server
             .add_artifact(Parameters(AddArtifactParams {
-                slug: "TP-999".to_string(),
+                issue_slug: "TP-999".to_string(),
                 kind: "Comment".to_string(),
                 artifact_slug: None,
                 body: serde_json::json!({"text": "hello"}),
@@ -1644,7 +1644,7 @@ mod tests {
 
         let result = server
             .add_artifact(Parameters(AddArtifactParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kind: "NotAKind".to_string(),
                 artifact_slug: None,
                 body: serde_json::json!({}),
@@ -1679,7 +1679,7 @@ mod tests {
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
         let result = IssueBossServer::new(core, user)
             .add_artifact(Parameters(AddArtifactParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kind: "Comment".to_string(),
                 artifact_slug: None,
                 body: serde_json::json!({"text": "hello"}),
@@ -1968,7 +1968,7 @@ mod tests {
 
         let result = server
             .list_artifacts(Parameters(ListArtifactsParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kinds: None,
                 uncovered_only: false,
             }))
@@ -1993,7 +1993,7 @@ mod tests {
 
         let result = server
             .list_artifacts(Parameters(ListArtifactsParams {
-                slug: "TP-999".to_string(),
+                issue_slug: "TP-999".to_string(),
                 kinds: None,
                 uncovered_only: false,
             }))
@@ -2023,7 +2023,7 @@ mod tests {
 
         let result = server
             .list_artifacts(Parameters(ListArtifactsParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kinds: Some(vec!["NotAKind".to_string()]),
                 uncovered_only: false,
             }))
@@ -2057,7 +2057,7 @@ mod tests {
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
         let result = IssueBossServer::new(core, user)
             .list_artifacts(Parameters(ListArtifactsParams {
-                slug: "TP-1".to_string(),
+                issue_slug: "TP-1".to_string(),
                 kinds: None,
                 uncovered_only: false,
             }))
