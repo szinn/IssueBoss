@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ib_core::CoreServices;
+use ib_core::{CoreServices, project::ProjectId, types::Capability, user::User};
 use tonic::{Request, Response, Status};
 
 use crate::grpc::{
@@ -71,6 +71,23 @@ fn project_member_to_proto(member: ib_core::project::ProjectMember, user: &ib_co
         created_at: member.created_at.to_rfc3339(),
         updated_at: member.updated_at.to_rfc3339(),
     }
+}
+
+/// Check that `user` holds `cap` for the given project.
+///
+/// Admin and SuperAdmin users bypass the membership check. All other users must
+/// be project members holding the required capability. Returns `not_found` on
+/// failure to avoid leaking project/issue existence.
+async fn require_capability(core: &Arc<CoreServices>, project_id: ProjectId, user: &User, cap: Capability) -> Result<(), Status> {
+    if user.capabilities.has(Capability::Admin) || user.capabilities.has(Capability::SuperAdmin) {
+        return Ok(());
+    }
+    let caps = core
+        .project_service()
+        .capabilities_for_user(project_id, user.id)
+        .await
+        .map_err(map_core_error)?;
+    if caps.has(cap) { Ok(()) } else { Err(Status::not_found("not found")) }
 }
 
 pub struct GrpcAdminService {
@@ -247,8 +264,16 @@ impl AdminService for GrpcAdminService {
 
     async fn create_issue(&self, request: Request<CreateIssueRequest>) -> Result<Response<IssueResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
-        crate::auth::require_admin(&user)?;
-        issue::handler::create_issue(&self.core_services, request.into_inner())
+        let req = request.into_inner();
+        let project = self
+            .core_services
+            .project_service()
+            .find_by_slug(&req.project_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, project.id, &user, Capability::CreateIssues).await?;
+        issue::handler::create_issue(&self.core_services, req)
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -256,8 +281,16 @@ impl AdminService for GrpcAdminService {
 
     async fn update_issue(&self, request: Request<UpdateIssueRequest>) -> Result<Response<IssueResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
-        crate::auth::require_admin(&user)?;
-        issue::handler::update_issue(&self.core_services, request.into_inner())
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        issue::handler::update_issue(&self.core_services, req)
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -265,8 +298,16 @@ impl AdminService for GrpcAdminService {
 
     async fn get_issue(&self, request: Request<GetIssueRequest>) -> Result<Response<IssueResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
-        crate::auth::require_admin(&user)?;
-        issue::handler::get_issue(&self.core_services, request.into_inner())
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::ViewIssues).await?;
+        issue::handler::get_issue(&self.core_services, req)
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -274,8 +315,16 @@ impl AdminService for GrpcAdminService {
 
     async fn list_issues(&self, request: Request<ListIssuesRequest>) -> Result<Response<ListIssuesResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
-        crate::auth::require_admin(&user)?;
-        issue::handler::list_issues(&self.core_services, request.into_inner())
+        let req = request.into_inner();
+        let project = self
+            .core_services
+            .project_service()
+            .find_by_slug(&req.project_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, project.id, &user, Capability::ViewIssues).await?;
+        issue::handler::list_issues(&self.core_services, req)
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -283,8 +332,16 @@ impl AdminService for GrpcAdminService {
 
     async fn transition_issue(&self, request: Request<TransitionIssueRequest>) -> Result<Response<IssueResponse>, Status> {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
-        crate::auth::require_admin(&user)?;
-        issue::handler::transition_issue(&self.core_services, request.into_inner())
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        issue::handler::transition_issue(&self.core_services, req)
             .await
             .map(Response::new)
             .map_err(map_core_error)

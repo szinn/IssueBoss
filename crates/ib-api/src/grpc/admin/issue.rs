@@ -234,19 +234,112 @@ pub mod api {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use ib_core::{
-        api_key::MockApiKeyRepository,
+        api_key::{ApiKey, MockApiKeyRepository, sha256_hex},
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
-        project::{MockProjectRepository, Project, ProjectToken},
+        project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectToken},
         user::MockUserRepository,
     };
     use tonic::Code;
 
     use crate::grpc::{
-        admin::issue::handler,
-        admin_proto::{CreateIssueRequest, GetIssueRequest},
+        admin::{GrpcAdminService, issue::handler},
+        admin_proto::{CreateIssueRequest, GetIssueRequest, ListIssuesRequest, TransitionIssueRequest, UpdateIssueRequest},
         error::map_core_error,
     };
+
+    const TEST_API_KEY: &str = "test-api-key-nonmember";
+
+    fn fake_non_admin_user(id: u64) -> ib_core::user::User {
+        use chrono::Utc;
+        ib_core::user::User {
+            id,
+            token: ib_core::user::UserToken::new(id),
+            username: "non_admin".to_owned(),
+            full_name: "Non Admin".to_owned(),
+            password_hash: "hash".to_owned(),
+            email_address: "non_admin@example.com".to_owned(),
+            capabilities: ib_core::types::Capabilities::default(),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn fake_api_key_for_user(user_id: u64) -> ApiKey {
+        use chrono::Utc;
+        ApiKey {
+            id: 1,
+            user_id,
+            key_type: "ib_live".to_owned(),
+            key_hash: sha256_hex(TEST_API_KEY),
+            key_prefix: "ib_live_XXXX".to_owned(),
+            name: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+        }
+    }
+
+    fn make_request_with_api_key<T>(body: T) -> tonic::Request<T> {
+        let mut req = tonic::Request::new(body);
+        req.metadata_mut().insert("x-api-key", TEST_API_KEY.parse().unwrap());
+        req
+    }
+
+    fn make_service_non_member(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        member_repo: MockProjectMemberRepository,
+    ) -> GrpcAdminService {
+        let user = fake_non_admin_user(42);
+        let api_key = fake_api_key_for_user(42);
+        let key_hash = api_key.key_hash.clone();
+
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+
+        let mut api_key_repo = MockApiKeyRepository::new();
+        {
+            let k = api_key.clone();
+            api_key_repo.expect_find_by_hash().returning(move |_, h| {
+                if h == key_hash {
+                    let k = k.clone();
+                    Box::pin(async move { Ok(Some(k)) })
+                } else {
+                    Box::pin(async { Ok(None) })
+                }
+            });
+        }
+        api_key_repo.expect_update_last_used().returning(|_, _| Box::pin(async { Ok(()) }));
+
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(api_key_repo))
+                .project_repository(Arc::new(project_repo))
+                .project_member_repository(Arc::new(member_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        GrpcAdminService::new(ib_core::create_services(repo_svc))
+    }
+
+    fn no_member_repo() -> MockProjectMemberRepository {
+        let mut r = MockProjectMemberRepository::new();
+        r.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        r
+    }
 
     fn fake_project(id: u64, slug: &str, prefix: &str) -> Project {
         use chrono::Utc;
@@ -563,5 +656,116 @@ mod tests {
         .map_err(map_core_error)
         .unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn list_issues_non_member_returns_permission_error() {
+        use crate::grpc::admin_proto::admin_service_server::AdminService;
+        let project = fake_project(1, "myapp", "MA");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let svc = make_service_non_member(project_repo, MockIssueRepository::new(), no_member_repo());
+        let req = make_request_with_api_key(ListIssuesRequest {
+            project_slug: "myapp".into(),
+            status: None,
+            priority: None,
+            size: None,
+            limit: None,
+        });
+        let err = svc.list_issues(req).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn create_issue_non_member_returns_permission_error() {
+        use crate::grpc::admin_proto::admin_service_server::AdminService;
+        let project = fake_project(1, "myapp", "MA");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let svc = make_service_non_member(project_repo, MockIssueRepository::new(), no_member_repo());
+        let req = make_request_with_api_key(CreateIssueRequest {
+            project_slug: "myapp".into(),
+            title: "New issue".into(),
+            description: "".into(),
+            priority: "Medium".into(),
+            size: None,
+        });
+        let err = svc.create_issue(req).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn get_issue_non_member_returns_permission_error() {
+        use crate::grpc::admin_proto::admin_service_server::AdminService;
+        let issue = fake_issue(100, 1, 1);
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
+        let req = make_request_with_api_key(GetIssueRequest { slug: "TP-1".into() });
+        let err = svc.get_issue(req).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn update_issue_non_member_returns_permission_error() {
+        use crate::grpc::admin_proto::admin_service_server::AdminService;
+        let issue = fake_issue(100, 1, 1);
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
+        let req = make_request_with_api_key(UpdateIssueRequest {
+            slug: "TP-1".into(),
+            title: Some("Updated title".into()),
+            description: None,
+            priority: None,
+            size: None,
+        });
+        let err = svc.update_issue(req).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn transition_issue_non_member_returns_permission_error() {
+        use crate::grpc::admin_proto::admin_service_server::AdminService;
+        let issue = fake_issue(100, 1, 1);
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
+        let req = make_request_with_api_key(TransitionIssueRequest {
+            slug: "TP-1".into(),
+            new_status: "TriageInProgress".into(),
+        });
+        let err = svc.transition_issue(req).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
     }
 }
