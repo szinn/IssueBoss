@@ -226,6 +226,48 @@ message TransitionIssueRequest {
   string new_status = 2;   // IssueStatus as string, e.g. "InDev"
 }
 
+// ── Artifact messages ─────────────────────────────────────────────────────────
+
+message ArtifactResponse {
+  optional string slug       = 1;
+  string          kind       = 2;
+  string          body_json  = 3;  // serde_json serialized body
+  string          created_at = 4;  // RFC 3339
+  string          updated_at = 5;  // RFC 3339
+}
+
+message AddArtifactRequest {
+  string          issue_slug = 1;
+  string          kind       = 2;   // ArtifactKind as string, e.g. "Comment"
+  optional string slug       = 3;   // required for kinds that need a slug
+  string          body_json  = 4;   // serde_json serialized body
+}
+
+message UpdateArtifactRequest {
+  string issue_slug      = 1;   // issue slug, e.g. "IB-1"
+  uint32 artifact_number = 2;   // artifact ID
+  string body_json       = 3;   // serde_json serialized body
+}
+
+message RemoveArtifactRequest {
+  string issue_slug      = 1;   // issue slug, e.g. "IB-1"
+  uint32 artifact_number = 2;   // artifact ID
+}
+
+message ListArtifactsRequest {
+  string          issue_slug    = 1;
+  repeated string kinds         = 2;   // filter by ArtifactKind strings; empty = all
+}
+
+message ListArtifactsResponse {
+  repeated ArtifactResponse artifacts = 1;
+}
+
+message MoveArtifactRequest {
+  string old_path = 1;
+  string new_path = 2;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 service AdminService {
@@ -264,4 +306,11 @@ service AdminService {
   rpc GetIssue(GetIssueRequest)               returns (IssueResponse);
   rpc ListIssues(ListIssuesRequest)           returns (ListIssuesResponse);
   rpc TransitionIssue(TransitionIssueRequest) returns (IssueResponse);
+
+  // Artifact management — requires project membership with appropriate capability
+  rpc AddArtifact(AddArtifactRequest)         returns (ArtifactResponse);
+  rpc UpdateArtifact(UpdateArtifactRequest)   returns (ArtifactResponse);
+  rpc RemoveArtifact(RemoveArtifactRequest)   returns (Empty);
+  rpc ListArtifacts(ListArtifactsRequest)     returns (ListArtifactsResponse);
+  rpc MoveArtifact(MoveArtifactRequest)       returns (Empty);
 }

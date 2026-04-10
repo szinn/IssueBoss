@@ -5,17 +5,19 @@ use tonic::{Request, Response, Status};
 
 use crate::grpc::{
     admin_proto::{
-        AddProjectMemberRequest, CreateApiKeyRequest, CreateApiKeyResponse, CreateIssueRequest, CreateProjectRequest, CreateUserRequest, DeleteProjectRequest,
-        DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest, IssueResponse, ListApiKeysRequest, ListApiKeysResponse,
-        ListIssuesRequest, ListIssuesResponse, ListProjectMembersRequest, ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse,
-        ListUsersRequest, ListUsersResponse, ProjectMemberResponse, ProjectResponse, RemoveProjectMemberRequest, RevokeApiKeyRequest, SuperAdminRequest,
-        SuperAdminResponse, TransitionIssueRequest, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
+        AddArtifactRequest, AddProjectMemberRequest, ArtifactResponse, CreateApiKeyRequest, CreateApiKeyResponse, CreateIssueRequest, CreateProjectRequest,
+        CreateUserRequest, DeleteProjectRequest, DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest, IssueResponse,
+        ListApiKeysRequest, ListApiKeysResponse, ListArtifactsRequest, ListArtifactsResponse, ListIssuesRequest, ListIssuesResponse, ListProjectMembersRequest,
+        ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse, ListUsersRequest, ListUsersResponse, MoveArtifactRequest, ProjectMemberResponse,
+        ProjectResponse, RemoveArtifactRequest, RemoveProjectMemberRequest, RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, TransitionIssueRequest,
+        UpdateArtifactRequest, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
         admin_service_server::AdminService,
     },
     error::map_core_error,
 };
 
 pub mod api_key;
+pub mod artifact;
 pub mod issue;
 pub mod project;
 pub mod super_admin;
@@ -342,6 +344,84 @@ impl AdminService for GrpcAdminService {
             .ok_or_else(|| Status::not_found("not found"))?;
         require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
         issue::handler::transition_issue(&self.core_services, req)
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn add_artifact(&self, request: Request<AddArtifactRequest>) -> Result<Response<ArtifactResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.issue_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        let created_by = user.token.to_string();
+        artifact::handler::add_artifact(&self.core_services, req, created_by)
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn update_artifact(&self, request: Request<UpdateArtifactRequest>) -> Result<Response<ArtifactResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.issue_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        artifact::handler::update_artifact(&self.core_services, req)
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn remove_artifact(&self, request: Request<RemoveArtifactRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.issue_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        artifact::handler::remove_artifact(&self.core_services, req)
+            .await
+            .map(|_| Response::new(Empty {}))
+            .map_err(map_core_error)
+    }
+
+    async fn list_artifacts(&self, request: Request<ListArtifactsRequest>) -> Result<Response<ListArtifactsResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.issue_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::ViewIssues).await?;
+        artifact::handler::list_artifacts(&self.core_services, req)
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn move_artifact(&self, request: Request<MoveArtifactRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        crate::auth::require_admin(&user)?;
+        artifact::handler::move_artifact(&self.core_services, request.into_inner())
             .await
             .map(Response::new)
             .map_err(map_core_error)

@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::{
     Error, RepositoryError,
-    artifact::model::{ArtifactKind, IssueArtifact, NewArtifact},
+    artifact::model::{ArtifactId, ArtifactKind, IssueArtifact, NewArtifact},
     issue::IssueId,
     repository::RepositoryService,
     with_read_only_transaction, with_transaction,
@@ -14,7 +14,9 @@ use crate::{
 pub trait ArtifactService: Send + Sync {
     async fn add_artifact(&self, new_artifact: NewArtifact) -> Result<IssueArtifact, Error>;
     async fn update_artifact(&self, issue_id: IssueId, slug: &str, body: Value) -> Result<IssueArtifact, Error>;
+    async fn update_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId, body: Value) -> Result<IssueArtifact, Error>;
     async fn remove_artifact(&self, issue_id: IssueId, slug: &str) -> Result<(), Error>;
+    async fn remove_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId) -> Result<(), Error>;
     async fn list_artifacts(&self, issue_id: IssueId, kinds: Option<Vec<ArtifactKind>>, uncovered_only: bool) -> Result<Vec<IssueArtifact>, Error>;
     async fn move_artifact(&self, old_path: &str, new_path: &str) -> Result<Vec<IssueArtifact>, Error>;
 }
@@ -75,12 +77,46 @@ impl ArtifactService for ArtifactServiceImpl {
         })
     }
 
+    async fn update_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId, body: Value) -> Result<IssueArtifact, Error> {
+        with_transaction!(self, artifact_repository, |tx| {
+            let mut artifact = artifact_repository
+                .find_by_id(tx, artifact_id)
+                .await?
+                .filter(|a| a.issue_id == issue_id)
+                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+            if artifact.kind == ArtifactKind::StatusTransition {
+                return Err(Error::Validation("StatusTransition artifacts are immutable".into()));
+            }
+            if is_file_backed(&artifact.kind) {
+                let old_path = artifact.body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let new_path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                if !old_path.is_empty() && old_path != new_path {
+                    return Err(Error::Validation("file path is immutable after creation".into()));
+                }
+            }
+            validate_body(&artifact.kind, &body)?;
+            artifact.body = body;
+            artifact_repository.update(tx, artifact).await
+        })
+    }
+
     async fn remove_artifact(&self, issue_id: IssueId, slug: &str) -> Result<(), Error> {
         let slug = slug.to_owned();
         with_transaction!(self, artifact_repository, |tx| {
             let artifact = artifact_repository
                 .find_by_slug(tx, issue_id, &slug)
                 .await?
+                .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
+            artifact_repository.delete(tx, artifact.id).await
+        })
+    }
+
+    async fn remove_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId) -> Result<(), Error> {
+        with_transaction!(self, artifact_repository, |tx| {
+            let artifact = artifact_repository
+                .find_by_id(tx, artifact_id)
+                .await?
+                .filter(|a| a.issue_id == issue_id)
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
             artifact_repository.delete(tx, artifact.id).await
         })
