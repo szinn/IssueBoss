@@ -118,6 +118,13 @@ impl IssueRepository for IssueRepositoryAdapter {
         if let Some(limit) = filter.limit {
             query = query.limit(limit);
         }
+        if filter.exclude_blocked == Some(true) {
+            use sea_orm::sea_query::Expr;
+            query = query.filter(Expr::cust(
+                "NOT EXISTS (SELECT 1 FROM issue_relationships ir INNER JOIN issues blocker ON blocker.id = ir.to_issue_id WHERE ir.from_issue_id = issues.id \
+                 AND ir.kind = 'DependsOn' AND blocker.status != 'Done')",
+            ));
+        }
 
         let mut rows: Vec<issues::Model> = query.all(db).await.map_err(handle_dberr)?;
 
@@ -346,5 +353,249 @@ mod tests {
         let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].status, IssueStatus::DevInProgress);
+    }
+
+    #[tokio::test]
+    async fn exclude_blocked_filter() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("blk", "blk", "BK", None::<String>).unwrap())
+            .await
+            .unwrap();
+
+        let n1 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let blocker = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n1,
+                    title: "Blocker".into(),
+                    description: "".into(),
+                    status: IssueStatus::DevInProgress,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("BK-{n1}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        let n2 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let blocked = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n2,
+                    title: "Blocked".into(),
+                    description: "".into(),
+                    status: IssueStatus::DevNeeded,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("BK-{n2}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        let n3 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let free = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n3,
+                    title: "Free".into(),
+                    description: "".into(),
+                    status: IssueStatus::DevNeeded,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("BK-{n3}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        // blocked DependsOn blocker
+        svc.relationship_repository()
+            .add(
+                &*tx,
+                ib_core::relationship::model::NewIssueRelationship {
+                    from_issue_id: blocked.id,
+                    to_issue_id: blocker.id,
+                    kind: ib_core::relationship::model::RelationshipKind::DependsOn,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Without filter: all three returned
+        let all = svc.issue_repository().list(&*tx, project.id, IssueFilter::default()).await.unwrap();
+        assert_eq!(all.len(), 3);
+
+        // With exclude_blocked: only blocker and free returned (blocked is omitted)
+        let filter = IssueFilter {
+            exclude_blocked: Some(true),
+            ..Default::default()
+        };
+        let unblocked = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
+        assert_eq!(unblocked.len(), 2);
+        let slugs: Vec<&str> = unblocked.iter().map(|i| i.slug.as_str()).collect();
+        assert!(slugs.contains(&blocker.slug.as_str()));
+        assert!(slugs.contains(&free.slug.as_str()));
+        assert!(!slugs.contains(&blocked.slug.as_str()));
+    }
+
+    #[tokio::test]
+    async fn exclude_blocked_done_unblocks() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("res", "res", "RS", None::<String>).unwrap())
+            .await
+            .unwrap();
+
+        let n1 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let done_blocker = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n1,
+                    title: "Done Blocker".into(),
+                    description: "".into(),
+                    status: IssueStatus::Done,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("RS-{n1}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        let n2 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let issue = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n2,
+                    title: "Depends on Done".into(),
+                    description: "".into(),
+                    status: IssueStatus::DevNeeded,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("RS-{n2}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        // issue DependsOn done_blocker — Done unblocks, so issue should appear
+        svc.relationship_repository()
+            .add(
+                &*tx,
+                ib_core::relationship::model::NewIssueRelationship {
+                    from_issue_id: issue.id,
+                    to_issue_id: done_blocker.id,
+                    kind: ib_core::relationship::model::RelationshipKind::DependsOn,
+                },
+            )
+            .await
+            .unwrap();
+
+        let filter = IssueFilter {
+            exclude_blocked: Some(true),
+            ..Default::default()
+        };
+        let result = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
+
+        // Both issues returned — Done blocker doesn't count as an active block
+        assert_eq!(result.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn exclude_blocked_canceled_still_blocks() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("can", "can", "CN", None::<String>).unwrap())
+            .await
+            .unwrap();
+
+        let n1 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let canceled_blocker = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n1,
+                    title: "Canceled Blocker".into(),
+                    description: "".into(),
+                    status: IssueStatus::Canceled,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("CN-{n1}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        let n2 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let issue = svc
+            .issue_repository()
+            .create(
+                &*tx,
+                NewIssueRecord {
+                    project_id: project.id,
+                    number: n2,
+                    title: "Depends on Canceled".into(),
+                    description: "".into(),
+                    status: IssueStatus::DevNeeded,
+                    priority: IssuePriority::Medium,
+                    size: None,
+                    slug: format!("CN-{n2}"),
+                },
+            )
+            .await
+            .unwrap();
+
+        // issue DependsOn canceled_blocker — Canceled does NOT unblock
+        svc.relationship_repository()
+            .add(
+                &*tx,
+                ib_core::relationship::model::NewIssueRelationship {
+                    from_issue_id: issue.id,
+                    to_issue_id: canceled_blocker.id,
+                    kind: ib_core::relationship::model::RelationshipKind::DependsOn,
+                },
+            )
+            .await
+            .unwrap();
+
+        let filter = IssueFilter {
+            exclude_blocked: Some(true),
+            ..Default::default()
+        };
+        let result = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
+
+        // Only the canceled_blocker is returned — issue is still blocked (Canceled !=
+        // Done)
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].slug, canceled_blocker.slug);
     }
 }

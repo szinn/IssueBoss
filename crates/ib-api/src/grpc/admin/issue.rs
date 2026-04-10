@@ -113,6 +113,7 @@ pub(crate) mod handler {
                 .map(|s| s.parse().map_err(|_| Error::Validation(format!("unknown size: {s}"))))
                 .transpose()?,
             limit: req.limit,
+            exclude_blocked: None,
         };
         let issues = core.issue_service().list_issues(project.id, filter).await?;
         let mut responses = Vec::with_capacity(issues.len());

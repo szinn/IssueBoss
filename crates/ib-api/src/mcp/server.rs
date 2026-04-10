@@ -431,6 +431,7 @@ impl IssueBossServer {
                 .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
                 .transpose()?,
             limit: p.limit,
+            exclude_blocked: None,
         };
 
         let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;

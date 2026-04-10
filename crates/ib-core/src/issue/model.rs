@@ -220,6 +220,7 @@ pub struct IssueFilter {
     pub priority: Option<IssuePriority>,
     pub size: Option<IssueSize>,
     pub limit: Option<u64>,
+    pub exclude_blocked: Option<bool>,
 }
 
 /// Derives the immutable slug for an issue at creation time.
