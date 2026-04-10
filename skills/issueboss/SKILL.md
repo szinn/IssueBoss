@@ -44,10 +44,12 @@ File-backed (TriageResult, Spec, Plan, Research, Handoff): path immutable after 
 Singleton (TriageResult, Spec, Plan): auto-assigned slug, one per issue.
 Caller-slug (Research, ResearchTopic, Comment, Handoff): caller provides slug — lowercase letters, digits, hyphens only.
 
-TriageResult: singleton (slug "triage"), {path}, gates TriageInProgress→TriageReview, path={insights_dir}/issues/{issue-slug}-triage.md
-Spec: singleton (slug "spec"), {path}, gates SpecInProgress→SpecReview, path={insights_dir}/shared/specs/{issue-slug}-spec.md
-Plan: singleton (slug "plan"), {path}, gates PlanInProgress→PlanReview, path={insights_dir}/shared/plans/{issue-slug}-plan.md
-Research: caller slug, {topic_token, status, path}, covers a ResearchTopic, path={insights_dir}/shared/research/{topic-slug}.md
+TriageResult: singleton (slug "triage"), {path}, gates TriageInProgress→TriageReview, path={insights_dir}/issues/{issue-slug}-triage-{kebab-summary}.md
+Spec: singleton (slug "spec"), {path}, gates SpecInProgress→SpecReview, path={insights_dir}/shared/specs/{issue-slug}-spec-{kebab-summary}.md
+Plan: singleton (slug "plan"), {path}, gates PlanInProgress→PlanReview, path={insights_dir}/shared/plans/{issue-slug}-plan-{kebab-summary}.md
+
+**File naming:** `{issue-slug}` in paths must use the issue's slug exactly as returned by the API — preserve the project prefix casing (e.g. `IB-3-plan.md`, not `ib-3-plan.md`).
+Research: caller slug, {topic_token, status, path}, covers a ResearchTopic, path={insights_dir}/shared/research/{kebab-summary}.md
 ResearchTopic: caller slug, {description} or {path}, uncovered topics block ResearchReview
 Comment: caller slug, {text}
 Handoff: caller slug, {path}, file-backed, move_artifact applies, path={insights_dir}/issues/{issue-slug}-handoff.md
@@ -57,13 +59,15 @@ StatusTransition: system-generated only — do not create manually
 
 ### Triage
 
-1. Read issue via issueboss://issues/{slug}
-2. transition→TriageInProgress
-3. Investigate scope (code, existing artifacts)
-4. Determine size/risk/phases needed
-5. add_artifact kind=TriageResult with path to triage doc
-6. transition→TriageReview
-7. Present summary; ask user which phase to advance to
+1. Verify `{insights_dir}/issues/` exists on disk — if not, stop and tell the user to create it before triaging
+2. Read issue via issueboss://issues/{slug}
+3. transition→TriageInProgress
+4. Investigate scope (code, existing artifacts)
+5. Determine size/risk/phases needed
+6. Write triage doc using the Write tool directly — do NOT run mkdir
+7. add_artifact kind=TriageResult with path to triage doc
+8. **Immediately** transition→TriageReview — do NOT wait for user instruction
+9. Present summary; ask user which phase to advance to
 
 > Phase-specific guidance (research, spec, plan, dev skills) to be added.
 
@@ -72,8 +76,8 @@ StatusTransition: system-generated only — do not create manually
 1. transition→{Phase}InProgress
 2. Do the work
 3. add_artifact with relevant kind+path
-4. transition→{Phase}Review (gate clears once artifact exists)
-5. transition→next phase or Done
+4. **Immediately** transition→{Phase}Review — do NOT wait for user instruction; the gate clears as soon as the artifact exists
+5. Present summary; ask user which phase to advance to next (or Done)
 
 ### Walking a completed issue to Done
 
