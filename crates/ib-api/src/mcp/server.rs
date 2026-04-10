@@ -165,8 +165,8 @@ pub struct UpdateIssueParams {
 pub struct TransitionIssueParams {
     /// Issue slug, e.g. "IB-5"
     pub slug: String,
-    /// Target status. Valid values: TriageNeeded, TriageInProgress, TriageReview,
-    /// ResearchNeeded, ResearchInProgress, ResearchReview,
+    /// Target status. Valid values: TriageNeeded, TriageInProgress,
+    /// TriageReview, ResearchNeeded, ResearchInProgress, ResearchReview,
     /// SpecNeeded, SpecInProgress, SpecReview,
     /// PlanNeeded, PlanInProgress, PlanReview,
     /// DevNeeded, DevInProgress, DevReview,
@@ -182,7 +182,7 @@ struct AddArtifactParams {
     /// Issue slug, e.g. "IB-42"
     slug: String,
     /// Artifact kind: TriageResult, Spec, Research, Plan, ResearchTopic,
-    /// Comment
+    /// Comment, Handoff
     kind: String,
     /// Artifact slug for multi-instance kinds (ResearchTopic, Research,
     /// Comment). Lowercase letters, digits, and hyphens only. Not required
@@ -423,14 +423,9 @@ impl IssueBossServer {
     }
 
     #[tool(
-        description = "Transition an issue to a new status. \
-                       Pipeline: TriageNeeded → TriageInProgress → TriageReview → \
-                       ResearchNeeded → ResearchInProgress → ResearchReview → \
-                       SpecNeeded → SpecInProgress → SpecReview → \
-                       PlanNeeded → PlanInProgress → PlanReview → \
-                       DevNeeded → DevInProgress → DevReview → Done. \
-                       Backlog and Canceled reachable from most states. \
-                       Gated transitions require artifact prerequisites."
+        description = "Transition an issue to a new status. Pipeline: TriageNeeded → TriageInProgress → TriageReview → ResearchNeeded → ResearchInProgress → \
+                       ResearchReview → SpecNeeded → SpecInProgress → SpecReview → PlanNeeded → PlanInProgress → PlanReview → DevNeeded → DevInProgress → \
+                       DevReview → Done. Backlog and Canceled reachable from most states. Gated transitions require artifact prerequisites."
     )]
     async fn transition_issue(&self, params: Parameters<TransitionIssueParams>) -> Result<String, McpError> {
         let p = params.0;
@@ -470,7 +465,8 @@ impl IssueBossServer {
 
     #[tool(
         description = "Add an artifact to an issue. Kinds: TriageResult (path required), Spec (path required), Research (topic_token, status, path when \
-                       completed), Plan (path required), ResearchTopic (description or path), Comment (text). StatusTransition is system-generated only."
+                       completed), Plan (path required), ResearchTopic (description or path), Comment (text), Handoff (path required). StatusTransition is \
+                       system-generated only."
     )]
     async fn add_artifact(&self, params: Parameters<AddArtifactParams>) -> Result<String, McpError> {
         let p = params.0;
@@ -649,9 +645,9 @@ impl IssueBossServer {
 impl ServerHandler for IssueBossServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
-            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. TriageNeeded, DevInProgress) to \
-             efficiently query large projects. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects lists all accessible \
-             projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
+            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. TriageNeeded, \
+             DevInProgress) to efficiently query large projects. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects \
+             lists all accessible projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
         )
     }
 
@@ -1684,9 +1680,9 @@ mod tests {
     #[tokio::test]
     async fn transition_issue_gate_failure() {
         use ib_core::artifact::MockArtifactRepository;
-        // Issue is in TriageInProgress; transitioning to TriageReview requires a TriageResult
-        // artifact. With no artifacts, the gate fails and map_core_err must
-        // encode a gate_failed payload.
+        // Issue is in TriageInProgress; transitioning to TriageReview requires a
+        // TriageResult artifact. With no artifacts, the gate fails and
+        // map_core_err must encode a gate_failed payload.
         let mut issue = fake_issue(10, 1, 1);
         issue.status = IssueStatus::TriageInProgress;
 

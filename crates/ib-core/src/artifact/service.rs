@@ -140,13 +140,13 @@ impl ArtifactService for ArtifactServiceImpl {
 fn is_file_backed(kind: &ArtifactKind) -> bool {
     matches!(
         kind,
-        ArtifactKind::TriageResult | ArtifactKind::Spec | ArtifactKind::Research | ArtifactKind::Plan
+        ArtifactKind::TriageResult | ArtifactKind::Spec | ArtifactKind::Research | ArtifactKind::Plan | ArtifactKind::Handoff
     )
 }
 
 pub(crate) fn validate_body(kind: &ArtifactKind, body: &Value) -> Result<(), Error> {
     match kind {
-        ArtifactKind::TriageResult | ArtifactKind::Spec | ArtifactKind::Plan => {
+        ArtifactKind::TriageResult | ArtifactKind::Spec | ArtifactKind::Plan | ArtifactKind::Handoff => {
             if body.get("path").and_then(|v| v.as_str()).is_none() {
                 return Err(Error::Validation(format!("{kind} body requires a 'path' field")));
             }
@@ -436,5 +436,40 @@ mod tests {
         for artifact in &result {
             assert_eq!(artifact.body["path"], ".insights/new.md");
         }
+    }
+
+    #[tokio::test]
+    async fn add_artifact_rejects_handoff_missing_path() {
+        let svc = make_svc(MockArtifactRepository::new());
+        let result = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Handoff,
+                slug: Some("phase-1-complete".into()),
+                body: json!({"note": "missing path"}),
+                created_by: "U_1".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_rejects_handoff_without_slug() {
+        let svc = make_svc(MockArtifactRepository::new());
+        let result = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Handoff,
+                slug: None,
+                body: json!({"path": ".insights/issues/IB-1-handoff.md"}),
+                created_by: "U_1".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn handoff_is_file_backed() {
+        assert!(is_file_backed(&ArtifactKind::Handoff));
     }
 }

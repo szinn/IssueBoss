@@ -16,6 +16,7 @@ pub enum ArtifactKind {
     ResearchTopic,
     Comment,
     StatusTransition,
+    Handoff,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -28,6 +29,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::ResearchTopic => "ResearchTopic",
             Self::Comment => "Comment",
             Self::StatusTransition => "StatusTransition",
+            Self::Handoff => "Handoff",
         };
         write!(f, "{s}")
     }
@@ -48,6 +50,7 @@ impl std::str::FromStr for ArtifactKind {
             "ResearchTopic" => Ok(Self::ResearchTopic),
             "Comment" => Ok(Self::Comment),
             "StatusTransition" => Ok(Self::StatusTransition),
+            "Handoff" => Ok(Self::Handoff),
             _ => Err(ParseArtifactKindError(s.to_owned())),
         }
     }
@@ -91,6 +94,7 @@ mod tests {
             ArtifactKind::ResearchTopic,
             ArtifactKind::Comment,
             ArtifactKind::StatusTransition,
+            ArtifactKind::Handoff,
         ] {
             assert_eq!(ArtifactKind::from_str(&kind.to_string()).unwrap(), kind);
         }

@@ -318,3 +318,43 @@ async fn move_artifact_no_matching_artifacts() {
         .unwrap();
     assert!(result.is_empty());
 }
+
+#[tokio::test]
+async fn handoff_artifact_lifecycle() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Handoff Test", "handoff-test", "HO").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "HO", "Source issue").await;
+
+    let old_path = ".insights/issues/HO-1-handoff.md";
+    let new_path = ".insights/issues/HO-1-handoff-v2.md";
+
+    // Create a Handoff artifact with caller-provided slug
+    let artifact = ctx
+        .services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Handoff,
+            slug: Some("phase-1-complete".into()),
+            body: serde_json::json!({"path": old_path}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(artifact.slug, Some("phase-1-complete".to_string()));
+    assert_eq!(artifact.body["path"], old_path);
+
+    // Handoff appears in list_artifacts
+    let artifacts = ctx
+        .services
+        .artifact_service()
+        .list_artifacts(issue.id, Some(vec![ArtifactKind::Handoff]), false)
+        .await
+        .unwrap();
+    assert_eq!(artifacts.len(), 1);
+
+    // move_artifact updates the path
+    let moved = ctx.services.artifact_service().move_artifact(old_path, new_path).await.unwrap();
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0].body["path"], new_path);
+}
