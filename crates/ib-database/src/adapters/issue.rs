@@ -4,7 +4,7 @@ use ib_core::{
     project::ProjectId,
     repository::Transaction,
 };
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
+use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set, sea_query::Expr};
 
 use crate::{
     entities::{issues, prelude},
@@ -119,7 +119,6 @@ impl IssueRepository for IssueRepositoryAdapter {
             query = query.limit(limit);
         }
         if filter.exclude_blocked == Some(true) {
-            use sea_orm::sea_query::Expr;
             query = query.filter(Expr::cust(
                 "NOT EXISTS (SELECT 1 FROM issue_relationships ir INNER JOIN issues blocker ON blocker.id = ir.to_issue_id WHERE ir.from_issue_id = issues.id \
                  AND ir.kind = 'DependsOn' AND blocker.status != 'Done')",
@@ -593,8 +592,8 @@ mod tests {
         };
         let result = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
 
-        // Only the canceled_blocker is returned — issue is still blocked (Canceled !=
-        // Done)
+        // canceled_blocker has no dependencies of its own, so it passes the filter.
+        // issue is excluded because it depends on canceled_blocker (Canceled != Done, so still an active block).
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].slug, canceled_blocker.slug);
     }
