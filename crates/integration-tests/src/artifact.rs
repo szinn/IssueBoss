@@ -32,7 +32,7 @@ async fn artifact_lifecycle() {
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
 
     // Add TriageResult — gate passes (slug auto-assigned by service)
-    let _triage = ctx
+    let triage = ctx
         .services
         .artifact_service()
         .add_artifact(NewArtifact {
@@ -44,7 +44,7 @@ async fn artifact_lifecycle() {
         })
         .await
         .unwrap();
-    assert_eq!(_triage.slug, Some("triage".to_string()));
+    assert_eq!(triage.slug, Some("triage".to_string()));
 
     // TriageInProgress → TriageReview (gate passes now that TriageResult exists)
     let issue = ctx
@@ -231,7 +231,7 @@ async fn artifact_slug_uniqueness_enforced() {
         })
         .await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[tokio::test]
