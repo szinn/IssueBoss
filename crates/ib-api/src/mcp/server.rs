@@ -116,6 +116,39 @@ struct MoveArtifactResultMcp {
     artifacts: Vec<MovedArtifactMcp>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct RelatedIssueSummaryMcp {
+    id: u64,
+    slug: String,
+    title: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct IssueRelationshipsMcp {
+    depends_on: Vec<RelatedIssueSummaryMcp>,
+    blocks: Vec<RelatedIssueSummaryMcp>,
+    related_to: Vec<RelatedIssueSummaryMcp>,
+}
+
+impl From<ib_core::relationship::IssueRelationships> for IssueRelationshipsMcp {
+    fn from(r: ib_core::relationship::IssueRelationships) -> Self {
+        let convert = |v: Vec<ib_core::relationship::RelatedIssueSummary>| {
+            v.into_iter()
+                .map(|s| RelatedIssueSummaryMcp {
+                    id: s.id,
+                    slug: s.slug,
+                    title: s.title,
+                })
+                .collect()
+        };
+        Self {
+            depends_on: convert(r.depends_on),
+            blocks: convert(r.blocks),
+            related_to: convert(r.related_to),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tool parameter structs
 // ---------------------------------------------------------------------------
@@ -235,6 +268,32 @@ struct MoveArtifactParams {
     new_path: String,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct AddRelationshipParams {
+    /// Issue slug, e.g. "IB-5"
+    issue_slug: String,
+    /// Related issue slug, e.g. "IB-3"
+    related_slug: String,
+    /// Relationship kind: "DependsOn" or "RelatedTo"
+    kind: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct RemoveRelationshipParams {
+    /// Issue slug, e.g. "IB-5"
+    issue_slug: String,
+    /// Related issue slug, e.g. "IB-3"
+    related_slug: String,
+    /// Relationship kind: "DependsOn" or "RelatedTo"
+    kind: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct ListRelationshipsParams {
+    /// Issue slug, e.g. "IB-5"
+    issue_slug: String,
+}
+
 // ---------------------------------------------------------------------------
 // Error helper
 // ---------------------------------------------------------------------------
@@ -252,6 +311,8 @@ fn map_core_err(e: ib_core::Error) -> McpError {
             .to_string(),
             None,
         ),
+        ib_core::Error::CycleDetected => McpError::invalid_params("adding this relationship would create a dependency cycle", None),
+        ib_core::Error::AlreadyExists => McpError::invalid_params("relationship already exists", None),
         _ => McpError::internal_error("internal server error", None),
     }
 }
@@ -644,6 +705,82 @@ impl IssueBossServer {
             artifacts,
         })
     }
+
+    #[tool(
+        description = "Add a relationship between two issues in the same project. kind must be 'DependsOn' (issue_slug depends on related_slug) or \
+                       'RelatedTo' (symmetric). DependsOn relationships are validated for cycles. Requires UpdateIssues capability."
+    )]
+    async fn add_relationship(&self, params: Parameters<AddRelationshipParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let kind = p
+            .kind
+            .parse::<ib_core::relationship::RelationshipKind>()
+            .map_err(|_| McpError::invalid_params(format!("invalid kind: {}", p.kind), None))?;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.issue_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
+        self.core
+            .relationship_service()
+            .add_relationship(&p.issue_slug, &p.related_slug, kind)
+            .await
+            .map_err(map_core_err)?;
+        serialize(&serde_json::json!({
+            "ok": true,
+            "from": p.issue_slug,
+            "to": p.related_slug,
+            "kind": p.kind,
+        }))
+    }
+
+    #[tool(
+        description = "Remove a relationship between two issues. kind must be 'DependsOn' or 'RelatedTo'. Returns ok=true if found and removed, ok=false if \
+                       not found. Requires UpdateIssues capability."
+    )]
+    async fn remove_relationship(&self, params: Parameters<RemoveRelationshipParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let kind = p
+            .kind
+            .parse::<ib_core::relationship::RelationshipKind>()
+            .map_err(|_| McpError::invalid_params(format!("invalid kind: {}", p.kind), None))?;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.issue_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.require_capability(issue.project_id, Capability::UpdateIssues).await?;
+        let removed = self
+            .core
+            .relationship_service()
+            .remove_relationship(&p.issue_slug, &p.related_slug, kind)
+            .await
+            .map_err(map_core_err)?;
+        serialize(&serde_json::json!({ "ok": removed }))
+    }
+
+    #[tool(
+        description = "List all relationships for an issue. Returns depends_on (issues this issue depends on), blocks (issues depending on this issue), and \
+                       related_to (symmetric relationships). Requires ViewIssues capability."
+    )]
+    async fn list_relationships(&self, params: Parameters<ListRelationshipsParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let issue = self
+            .core
+            .issue_service()
+            .find_by_slug(&p.issue_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("issue '{}' not found", p.issue_slug), None))?;
+        self.require_capability(issue.project_id, Capability::ViewIssues).await?;
+        let rels = self.core.relationship_service().list_for_issue(issue.id).await.map_err(map_core_err)?;
+        serialize(&IssueRelationshipsMcp::from(rels))
+    }
 }
 
 impl IssueBossServer {
@@ -666,7 +803,11 @@ impl IssueBossServer {
                 .map_err(map_core_err)?
                 .ok_or_else(|| McpError::invalid_params(format!("issue '{slug}' not found"), None))?;
             self.require_capability(issue.project_id, Capability::ViewIssues).await?;
-            let json = serialize(&IssueSummaryMcp::from_issue(issue))?;
+            let relationships = self.core.relationship_service().list_for_issue(issue.id).await.map_err(map_core_err)?;
+            let json = serialize(&serde_json::json!({
+                "issue": IssueSummaryMcp::from_issue(issue),
+                "relationships": IssueRelationshipsMcp::from(relationships),
+            }))?;
             Ok(ReadResourceResult::new(vec![
                 ResourceContents::text(json, uri).with_mime_type("application/json"),
             ]))
@@ -842,6 +983,25 @@ mod tests {
                 .project_repository(Arc::new(project_repo))
                 .project_member_repository(Arc::new(member_repo))
                 .issue_repository(Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    fn make_core_with_relationships(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        rel_repo: ib_core::relationship::MockIssueRelationshipRepository,
+    ) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(MockUserRepository::new()))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .relationship_repository(Arc::new(rel_repo) as Arc<dyn ib_core::relationship::IssueRelationshipRepository>)
                 .build()
                 .unwrap(),
         );
@@ -1509,6 +1669,8 @@ mod tests {
 
     #[tokio::test]
     async fn read_resource_issue_by_slug_happy_path() {
+        use ib_core::relationship::{MockIssueRelationshipRepository, model::IssueRelationships};
+
         let issue = fake_issue(10, 1, 1);
 
         let project_repo = MockProjectRepository::new();
@@ -1520,8 +1682,12 @@ mod tests {
                 Box::pin(async move { Ok(Some(i)) })
             });
         }
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo
+            .expect_list_for_issue()
+            .returning(|_, _| Box::pin(async { Ok(IssueRelationships::default()) }));
 
-        let core = make_core(project_repo, issue_repo);
+        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server.read_resource_inner("issueboss://issues/TP-1").await;
@@ -1531,7 +1697,8 @@ mod tests {
         assert_eq!(contents.len(), 1);
         if let ResourceContents::TextResourceContents { text, .. } = &contents[0] {
             let json: serde_json::Value = serde_json::from_str(text).unwrap();
-            assert_eq!(json["slug"], "TP-1");
+            assert_eq!(json["issue"]["slug"], "TP-1");
+            assert!(json["relationships"].is_object());
         } else {
             panic!("expected text resource contents");
         }
@@ -2243,5 +2410,187 @@ mod tests {
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
         let result = IssueBossServer::new(core, user).read_resource_inner("issueboss://issues/TP-1").await;
         assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // add_relationship
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn add_relationship_happy_path() {
+        use ib_core::relationship::{
+            MockIssueRelationshipRepository,
+            model::{IssueRelationship, IssueRelationships},
+        };
+
+        // Two issues in the same project
+        let issue1 = fake_issue(1, 1, 1);
+        let issue2 = fake_issue(2, 1, 2);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            // The MCP handler calls find_by_slug for "TP-1" (capability check).
+            // The service then calls find_by_slug for "TP-1" and "TP-2" inside
+            // the transaction. We use a returning closure that matches on slug.
+            let i1 = issue1.clone();
+            let i2 = issue2.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, slug| {
+                let result = if slug == "TP-1" { Some(i1.clone()) } else { Some(i2.clone()) };
+                Box::pin(async move { Ok(result) })
+            });
+        }
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        // RelatedTo kind skips cycle check so list_for_issue is not called.
+        rel_repo.expect_add().returning(|_, rec| {
+            let kind = rec.kind.clone();
+            let from = rec.from_issue_id;
+            let to = rec.to_issue_id;
+            Box::pin(async move {
+                Ok(IssueRelationship {
+                    id: 99,
+                    from_issue_id: from,
+                    to_issue_id: to,
+                    kind,
+                    created_at: chrono::Utc::now(),
+                })
+            })
+        });
+        // list_for_issue may be called during cycle check — return empty for safety.
+        rel_repo
+            .expect_list_for_issue()
+            .returning(|_, _| Box::pin(async { Ok(IssueRelationships::default()) }));
+
+        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .add_relationship(Parameters(AddRelationshipParams {
+                issue_slug: "TP-1".into(),
+                related_slug: "TP-2".into(),
+                kind: "RelatedTo".into(),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["from"], "TP-1");
+        assert_eq!(json["to"], "TP-2");
+        assert_eq!(json["kind"], "RelatedTo");
+    }
+
+    #[tokio::test]
+    async fn add_relationship_invalid_kind() {
+        use ib_core::relationship::MockIssueRelationshipRepository;
+
+        let project_repo = MockProjectRepository::new();
+        let issue_repo = MockIssueRepository::new();
+        let rel_repo = MockIssueRelationshipRepository::new();
+
+        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .add_relationship(Parameters(AddRelationshipParams {
+                issue_slug: "TP-1".into(),
+                related_slug: "TP-2".into(),
+                kind: "InvalidKind".into(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // remove_relationship
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn remove_relationship_happy_path() {
+        use ib_core::relationship::MockIssueRelationshipRepository;
+
+        let issue1 = fake_issue(1, 1, 1);
+        let issue2 = fake_issue(2, 1, 2);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i1 = issue1.clone();
+            let i2 = issue2.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, slug| {
+                let result = if slug == "TP-1" { Some(i1.clone()) } else { Some(i2.clone()) };
+                Box::pin(async move { Ok(result) })
+            });
+        }
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo.expect_remove().returning(|_, _, _, _| Box::pin(async { Ok(true) }));
+
+        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .remove_relationship(Parameters(RemoveRelationshipParams {
+                issue_slug: "TP-1".into(),
+                related_slug: "TP-2".into(),
+                kind: "DependsOn".into(),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["ok"], true);
+    }
+
+    // -----------------------------------------------------------------------
+    // list_relationships
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn list_relationships_happy_path() {
+        use ib_core::relationship::{
+            MockIssueRelationshipRepository,
+            model::{IssueRelationships, RelatedIssueSummary},
+        };
+
+        let issue = fake_issue(10, 1, 1);
+
+        let project_repo = MockProjectRepository::new();
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo.expect_list_for_issue().returning(|_, _| {
+            Box::pin(async {
+                Ok(IssueRelationships {
+                    depends_on: vec![RelatedIssueSummary {
+                        id: 2,
+                        slug: "TP-2".to_owned(),
+                        title: "Issue 2".to_owned(),
+                    }],
+                    blocks: vec![],
+                    related_to: vec![],
+                })
+            })
+        });
+
+        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_relationships(Parameters(ListRelationshipsParams { issue_slug: "TP-1".into() }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["depends_on"].as_array().unwrap().len(), 1);
+        assert_eq!(json["depends_on"][0]["slug"], "TP-2");
+        assert!(json["blocks"].as_array().unwrap().is_empty());
+        assert!(json["related_to"].as_array().unwrap().is_empty());
     }
 }
