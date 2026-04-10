@@ -117,17 +117,4 @@ impl IssueRelationshipRepository for IssueRelationshipRepositoryAdapter {
         }
         Ok(result)
     }
-
-    async fn exists(&self, transaction: &dyn Transaction, from_issue_id: IssueId, to_issue_id: IssueId, kind: &RelationshipKind) -> Result<bool, Error> {
-        use sea_orm::PaginatorTrait;
-        let db = TransactionImpl::get_db_transaction(transaction)?;
-        let count = issue_relationships::Entity::find()
-            .filter(issue_relationships::Column::FromIssueId.eq(from_issue_id as i64))
-            .filter(issue_relationships::Column::ToIssueId.eq(to_issue_id as i64))
-            .filter(issue_relationships::Column::Kind.eq(kind.to_string()))
-            .count(db)
-            .await
-            .map_err(handle_dberr)?;
-        Ok(count > 0)
-    }
 }

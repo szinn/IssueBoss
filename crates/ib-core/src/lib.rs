@@ -17,6 +17,7 @@ use crate::{
     artifact::{ArtifactService, service::ArtifactServiceImpl},
     issue::{IssueService, service::IssueServiceImpl},
     project::{ProjectService, service::ProjectServiceImpl},
+    relationship::{IssueRelationshipService, service::IssueRelationshipServiceImpl},
     repository::RepositoryService,
     user::{UserService, service::UserServiceImpl},
 };
@@ -27,6 +28,7 @@ pub struct CoreServices {
     project_service: Arc<dyn ProjectService>,
     issue_service: Arc<dyn IssueService>,
     artifact_service: Arc<dyn ArtifactService>,
+    relationship_service: Arc<dyn IssueRelationshipService>,
 }
 
 impl CoreServices {
@@ -36,12 +38,14 @@ impl CoreServices {
         let project_service = Arc::new(ProjectServiceImpl::new(repository_service.clone()));
         let issue_service = Arc::new(IssueServiceImpl::new(repository_service.clone()));
         let artifact_service = Arc::new(ArtifactServiceImpl::new(repository_service.clone()));
+        let relationship_service = Arc::new(IssueRelationshipServiceImpl::new(repository_service.clone()));
         Self {
             user_service,
             api_key_service,
             project_service,
             issue_service,
             artifact_service,
+            relationship_service,
         }
     }
 
@@ -68,6 +72,11 @@ impl CoreServices {
     #[must_use]
     pub fn artifact_service(&self) -> &Arc<dyn ArtifactService> {
         &self.artifact_service
+    }
+
+    #[must_use]
+    pub fn relationship_service(&self) -> &Arc<dyn IssueRelationshipService> {
+        &self.relationship_service
     }
 }
 

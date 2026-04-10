@@ -9,6 +9,4 @@ pub trait IssueRelationshipRepository: Send + Sync {
     async fn remove(&self, transaction: &dyn Transaction, from_issue_id: IssueId, to_issue_id: IssueId, kind: RelationshipKind) -> Result<bool, Error>;
 
     async fn list_for_issue(&self, transaction: &dyn Transaction, issue_id: IssueId) -> Result<IssueRelationships, Error>;
-
-    async fn exists(&self, transaction: &dyn Transaction, from_issue_id: IssueId, to_issue_id: IssueId, kind: &RelationshipKind) -> Result<bool, Error>;
 }
