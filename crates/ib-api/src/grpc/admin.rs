@@ -5,11 +5,12 @@ use tonic::{Request, Response, Status};
 
 use crate::grpc::{
     admin_proto::{
-        AddArtifactRequest, AddProjectMemberRequest, ArtifactResponse, CreateApiKeyRequest, CreateApiKeyResponse, CreateIssueRequest, CreateProjectRequest,
-        CreateUserRequest, DeleteProjectRequest, DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest, IssueResponse,
-        ListApiKeysRequest, ListApiKeysResponse, ListArtifactsRequest, ListArtifactsResponse, ListIssuesRequest, ListIssuesResponse, ListProjectMembersRequest,
-        ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse, ListUsersRequest, ListUsersResponse, MoveArtifactRequest, ProjectMemberResponse,
-        ProjectResponse, RemoveArtifactRequest, RemoveProjectMemberRequest, RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, TransitionIssueRequest,
+        AddArtifactRequest, AddProjectMemberRequest, AddRelationshipRequest, ArtifactResponse, CreateApiKeyRequest, CreateApiKeyResponse, CreateIssueRequest,
+        CreateProjectRequest, CreateUserRequest, DeleteProjectRequest, DeleteUserRequest, Empty, GetIssueRequest, GetProjectRequest, GetUserRequest,
+        IssueResponse, ListApiKeysRequest, ListApiKeysResponse, ListArtifactsRequest, ListArtifactsResponse, ListIssuesRequest, ListIssuesResponse,
+        ListProjectMembersRequest, ListProjectMembersResponse, ListProjectsRequest, ListProjectsResponse, ListRelationshipsRequest, ListRelationshipsResponse,
+        ListUsersRequest, ListUsersResponse, MoveArtifactRequest, ProjectMemberResponse, ProjectResponse, RelationshipResponse, RemoveArtifactRequest,
+        RemoveProjectMemberRequest, RemoveRelationshipRequest, RevokeApiKeyRequest, SuperAdminRequest, SuperAdminResponse, TransitionIssueRequest,
         UpdateArtifactRequest, UpdateIssueRequest, UpdateProjectMemberRequest, UpdateProjectRequest, UpdateUserRequest, UserResponse,
         admin_service_server::AdminService,
     },
@@ -20,6 +21,7 @@ pub mod api_key;
 pub mod artifact;
 pub mod issue;
 pub mod project;
+pub(crate) mod relationship;
 pub mod super_admin;
 pub mod user;
 
@@ -48,8 +50,9 @@ fn project_to_proto(project: ib_core::project::Project) -> ProjectResponse {
     }
 }
 
-fn issue_to_proto(issue: ib_core::issue::Issue, project_slug: &str) -> IssueResponse {
-    IssueResponse {
+async fn issue_to_proto(core: &Arc<CoreServices>, issue: ib_core::issue::Issue, project_slug: &str) -> Result<IssueResponse, ib_core::Error> {
+    let relationships = relationship::handler::relationships_for_issue(core, issue.id).await?;
+    Ok(IssueResponse {
         token: issue.token.to_string(),
         project_slug: project_slug.to_owned(),
         number: issue.number,
@@ -61,7 +64,8 @@ fn issue_to_proto(issue: ib_core::issue::Issue, project_slug: &str) -> IssueResp
         slug: issue.slug,
         created_at: issue.created_at.to_rfc3339(),
         updated_at: issue.updated_at.to_rfc3339(),
-    }
+        relationships: Some(relationships),
+    })
 }
 
 fn project_member_to_proto(member: ib_core::project::ProjectMember, user: &ib_core::user::User) -> ProjectMemberResponse {
@@ -422,6 +426,59 @@ impl AdminService for GrpcAdminService {
         let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
         crate::auth::require_admin(&user)?;
         artifact::handler::move_artifact(&self.core_services, request.into_inner())
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn add_relationship(&self, request: Request<AddRelationshipRequest>) -> Result<Response<RelationshipResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.from_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("issue not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        relationship::handler::add_relationship(&self.core_services, req)
+            .await
+            .map(Response::new)
+            .map_err(map_core_error)
+    }
+
+    async fn remove_relationship(&self, request: Request<RemoveRelationshipRequest>) -> Result<Response<Empty>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.from_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("issue not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
+        // Returns OK regardless of whether the relationship existed — not-found is
+        // treated as a no-op.
+        let _removed = relationship::handler::remove_relationship(&self.core_services, req)
+            .await
+            .map_err(map_core_error)?;
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn list_relationships(&self, request: Request<ListRelationshipsRequest>) -> Result<Response<ListRelationshipsResponse>, Status> {
+        let user = crate::auth::authenticate_grpc(&self.core_services, request.metadata()).await?;
+        let req = request.into_inner();
+        let issue = self
+            .core_services
+            .issue_service()
+            .find_by_slug(&req.issue_slug)
+            .await
+            .map_err(map_core_error)?
+            .ok_or_else(|| Status::not_found("issue not found"))?;
+        require_capability(&self.core_services, issue.project_id, &user, Capability::ViewIssues).await?;
+        relationship::handler::list_relationships(&self.core_services, issue.id)
             .await
             .map(Response::new)
             .map_err(map_core_error)

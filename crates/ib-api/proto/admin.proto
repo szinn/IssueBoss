@@ -186,6 +186,7 @@ message IssueResponse {
   string          slug          = 9;
   string          created_at    = 10;  // RFC 3339
   string          updated_at    = 11;  // RFC 3339
+  IssueRelationshipsProto relationships = 12;
 }
 
 message CreateIssueRequest {
@@ -224,6 +225,46 @@ message ListIssuesResponse {
 message TransitionIssueRequest {
   string slug       = 1;   // issue slug, e.g. "IB-1"
   string new_status = 2;   // IssueStatus as string, e.g. "InDev"
+}
+
+// ── Relationship messages ─────────────────────────────────────────────────────
+
+message RelatedIssueSummary {
+  int64  id    = 1;
+  string slug  = 2;
+  string title = 3;
+}
+
+message IssueRelationshipsProto {
+  repeated RelatedIssueSummary depends_on = 1;
+  repeated RelatedIssueSummary blocks     = 2;
+  repeated RelatedIssueSummary related_to = 3;
+}
+
+message AddRelationshipRequest {
+  string from_slug = 1;
+  string to_slug   = 2;
+  string kind      = 3;
+}
+
+message RemoveRelationshipRequest {
+  string from_slug = 1;
+  string to_slug   = 2;
+  string kind      = 3;
+}
+
+message ListRelationshipsRequest {
+  string issue_slug = 1;
+}
+
+message ListRelationshipsResponse {
+  IssueRelationshipsProto relationships = 1;
+}
+
+message RelationshipResponse {
+  string from_slug = 1;
+  string to_slug   = 2;
+  string kind      = 3;
 }
 
 // ── Artifact messages ─────────────────────────────────────────────────────────
@@ -313,4 +354,9 @@ service AdminService {
   rpc RemoveArtifact(RemoveArtifactRequest)   returns (Empty);
   rpc ListArtifacts(ListArtifactsRequest)     returns (ListArtifactsResponse);
   rpc MoveArtifact(MoveArtifactRequest)       returns (Empty);
+
+  // Relationship management — requires project membership with appropriate capability
+  rpc AddRelationship(AddRelationshipRequest)       returns (RelationshipResponse);
+  rpc RemoveRelationship(RemoveRelationshipRequest) returns (Empty);
+  rpc ListRelationships(ListRelationshipsRequest)   returns (ListRelationshipsResponse);
 }

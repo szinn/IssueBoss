@@ -27,7 +27,7 @@ pub(crate) mod handler {
             .transpose()?;
         let new_issue = NewIssue::new(project.id, &project.prefix, req.title, req.description, priority, size)?;
         let issue = core.issue_service().create_issue(new_issue).await?;
-        Ok(issue_to_proto(issue, &project.slug))
+        issue_to_proto(core, issue, &project.slug).await
     }
 
     pub(crate) async fn update_issue(core: &Arc<CoreServices>, req: UpdateIssueRequest) -> Result<IssueResponse, Error> {
@@ -55,7 +55,7 @@ pub(crate) mod handler {
             issue.size = Some(size.parse().map_err(|_| Error::Validation(format!("unknown size: {size}")))?);
         }
         let updated = core.issue_service().update_issue(issue).await?;
-        Ok(issue_to_proto(updated, &project_slug))
+        issue_to_proto(core, updated, &project_slug).await
     }
 
     pub(crate) async fn transition_issue(core: &Arc<CoreServices>, req: TransitionIssueRequest) -> Result<IssueResponse, Error> {
@@ -75,7 +75,7 @@ pub(crate) mod handler {
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
         let updated = core.issue_service().transition_issue(issue.token, new_status, None).await?;
-        Ok(issue_to_proto(updated, &project_slug))
+        issue_to_proto(core, updated, &project_slug).await
     }
 
     pub(crate) async fn get_issue(core: &Arc<CoreServices>, req: GetIssueRequest) -> Result<IssueResponse, Error> {
@@ -90,7 +90,7 @@ pub(crate) mod handler {
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
-        Ok(issue_to_proto(issue, &project_slug))
+        issue_to_proto(core, issue, &project_slug).await
     }
 
     pub(crate) async fn list_issues(core: &Arc<CoreServices>, req: ListIssuesRequest) -> Result<ListIssuesResponse, Error> {
@@ -115,7 +115,10 @@ pub(crate) mod handler {
             limit: req.limit,
         };
         let issues = core.issue_service().list_issues(project.id, filter).await?;
-        let responses = issues.into_iter().map(|i| issue_to_proto(i, &project.slug)).collect();
+        let mut responses = Vec::with_capacity(issues.len());
+        for i in issues {
+            responses.push(issue_to_proto(core, i, &project.slug).await?);
+        }
         Ok(ListIssuesResponse { issues: responses })
     }
 }
@@ -240,6 +243,7 @@ mod tests {
         api_key::{ApiKey, MockApiKeyRepository, sha256_hex},
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectToken},
+        relationship::{IssueRelationships, MockIssueRelationshipRepository},
         user::MockUserRepository,
     };
     use tonic::Code;
@@ -341,6 +345,13 @@ mod tests {
         r
     }
 
+    fn empty_relationship_repo() -> MockIssueRelationshipRepository {
+        let mut r = MockIssueRelationshipRepository::new();
+        r.expect_list_for_issue()
+            .returning(|_, _| Box::pin(async { Ok(IssueRelationships::default()) }));
+        r
+    }
+
     fn fake_project(id: u64, slug: &str, prefix: &str) -> Project {
         use chrono::Utc;
         Project {
@@ -411,6 +422,7 @@ mod tests {
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
                 .build()
                 .unwrap(),
         );
@@ -532,6 +544,7 @@ mod tests {
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
                 .artifact_repository(std::sync::Arc::new(artifact_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
                 .build()
                 .unwrap(),
         );

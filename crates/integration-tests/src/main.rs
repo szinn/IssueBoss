@@ -3,6 +3,7 @@ mod context;
 mod fixtures;
 mod issue;
 mod project;
+mod relationship;
 mod user;
 
 #[cfg(feature = "postgres")]
