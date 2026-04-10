@@ -81,7 +81,11 @@ pub mod api {
             to_slug: to_slug.to_owned(),
             kind: kind.to_owned(),
         }));
-        client.add_relationship(req).await.map(|r| r.into_inner()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+        client
+            .add_relationship(req)
+            .await
+            .map(|r| r.into_inner())
+            .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
     pub async fn remove_relationship(host: &str, port: u16, from_slug: &str, to_slug: &str, kind: &str) -> Result<(), Error> {
@@ -91,7 +95,11 @@ pub mod api {
             to_slug: to_slug.to_owned(),
             kind: kind.to_owned(),
         }));
-        client.remove_relationship(req).await.map(|_| ()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+        client
+            .remove_relationship(req)
+            .await
+            .map(|_| ())
+            .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
     pub async fn list_relationships(host: &str, port: u16, issue_slug: &str) -> Result<ListRelationshipsResponse, Error> {
@@ -99,7 +107,11 @@ pub mod api {
         let req = with_api_key(tonic::Request::new(ListRelationshipsRequest {
             issue_slug: issue_slug.to_owned(),
         }));
-        client.list_relationships(req).await.map(|r| r.into_inner()).map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
+        client
+            .list_relationships(req)
+            .await
+            .map(|r| r.into_inner())
+            .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 }
 

@@ -41,6 +41,10 @@ async fn main() -> anyhow::Result<()> {
             use crate::commands::artifact::cmd_artifact;
             cmd_artifact(&cli.host, cli.port, args).await
         }
+        Commands::Relationship(args) => {
+            use crate::commands::relationship::cmd_relationship;
+            cmd_relationship(&cli.host, cli.port, args).await
+        }
         Commands::ApiKey(args) => {
             use crate::commands::api_key::cmd_api_key;
             cmd_api_key(&cli.host, cli.port, args).await
