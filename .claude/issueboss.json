@@ -1,5 +1,5 @@
 {
   "project_slug": "ib",
   "server": "http://localhost:8090",
-  "thoughts_dir": "thoughts/"
+  "insights_dir": ".insights/"
 }
