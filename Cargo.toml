@@ -100,7 +100,7 @@ version = "1.4.0"
 features = ["server", "macros", "transport-streamable-http-server"]
 
 [workspace.dependencies.sea-orm]
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 features = [
     "debug-print",
     "postgres-array",
@@ -115,7 +115,7 @@ features = [
 ]
 
 [workspace.dependencies.sea-orm-migration]
-version = "2.0.0-rc.37"
+version = "2.0.0-rc.38"
 features = [
     "sqlx-postgres",
     "sqlx-sqlite",
