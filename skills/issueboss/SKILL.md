@@ -63,16 +63,15 @@ StatusTransition: system-generated only — do not create manually
 
 ### Triage
 
-1. Verify `{insights_dir}/issues/` exists on disk — if not, stop and tell the user to create it before triaging
-2. Read issue via issueboss://issues/{slug}
-3. transition→TriageInProgress
-4. Investigate scope (code, existing artifacts)
-5. Identify open questions
-6. Determine size/risk/phases needed
-7. Write triage doc using the Write tool directly — do NOT run mkdir
-8. add_artifact kind=TriageResult with path to triage doc
-9. **Immediately** transition→TriageReview — do NOT wait for user instruction
-10. Present summary; ask user which phase to advance to
+Delegate to the `issueboss:triage` agent via the Agent tool.
+
+> **Permission requirement:** The triage agent writes files to `.insights/`. Before dispatching, ensure the current session has file write permissions enabled — otherwise the agent will fail when it attempts to write the triage document.
+
+- **Single issue:** Dispatch one background agent — `subagent_type: issueboss:triage`, `run_in_background: true`, prompt containing "Triage issue {slug}." followed by any context the user provided. When it completes, display the returned summary and ask the user which phase to advance to.
+- **Multiple issues:** Dispatch one background agent per issue in a single message (all Agent tool calls in the same response), each with prompt "Triage issue {slug}." followed by any relevant context. Display summaries grouped by issue when all complete; ask the user which phase to advance to for each.
+- **No issues to triage:** If there are no TriageNeeded issues, inform the user and do nothing.
+- **Foreground override:** If the user explicitly asks to wait (e.g., "wait for it", "don't background it", "triage IB-42 synchronously"), omit `run_in_background`.
+- **Agent errors:** If the agent returns an error (e.g., `Error (Step 3): Issue {slug} is in {status}, not TriageNeeded`), display it to the user as-is and do not attempt retry.
 
 > Phase-specific guidance (research, spec, plan, dev skills) to be added.
 
@@ -104,4 +103,4 @@ Show issue fields (slug, title, status, priority, size, description, submitter f
 
 ### Listing issues
 
-Show slug, status, priority, title. Lead with actionable states (TriageNeeded, in-progress) before blocked/low-priority.
+Show slug, status, priority, title. Lead with actionable states (TriageNeeded, in-progress) before blocked/low-priority. **Do not include Backlog or Canceled issues** unless the user explicitly asks for them.
