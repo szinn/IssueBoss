@@ -11,6 +11,7 @@ You are using the `insights-research` skill to surface prior context from `.insi
 ## Trigger Phrases
 
 This skill applies when:
+
 - User says "check insights", "research insights", "look for prior context", "what do we know about [topic]"
 - At the start of brainstorming, spec writing, or planning work where prior research may exist
 - Another skill or agent requests insights context about a topic
@@ -24,6 +25,7 @@ This skill applies when:
 3. **Auto-select top 5** from the locator's ranked list. Note the total count for the analyzer.
    Pass all found documents (up to 5) — if fewer than 5 were found, pass all of them.
    If the locator returns zero documents, skip steps 4–7 and return:
+
    > No prior context found for `<topic>` in `.insights/`.
 
 4. **Dispatch `insights-analyzer`** via the Agent tool — prompt includes the 5 file paths and total found count. Wait for result.
@@ -58,26 +60,33 @@ status: complete
 **Topic:** <topic>
 
 ## Summary
+
 [High-level answer to the research question — 2-4 sentences]
 
 ## Key Findings
 
 ### Decisions
+
 - [Decision] — rationale
 
 ### Constraints
+
 - [Constraint]
 
 ### Technical Specs
+
 - [Spec detail]
 
 ### Open Questions
+
 - [Question]
 
 ## Document References
+
 - `.insights/path/to/doc.md` — brief description
 
 ## Additional Documents (not analyzed)
+
 [N documents were found but not analyzed due to the 5-document cap.
 Run insights-research again with a narrower topic or doc type filter to analyze them.]
 ```
@@ -89,7 +98,6 @@ Omit any section that has no content.
 When appending to an existing same-day file, add at the end:
 
 ```markdown
-
 ## Follow-up Research [HH:MM]
 
 **Topic:** <topic or follow-up question>
@@ -97,6 +105,7 @@ When appending to an existing same-day file, add at the end:
 [Key findings in the same Key Findings structure as above]
 
 ### Document References
+
 - `.insights/path/to/doc.md` — brief description
 ```
 

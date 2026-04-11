@@ -28,6 +28,7 @@ Read — for reading document files fully (no limit/offset — always read compl
 Process at most 5 files. If more are provided, process only the first 5 in the order given by the caller — do not reorder.
 
 For each file:
+
 1. Read it fully with no limit/offset parameters
 2. Extract only:
    - **Decisions** — firm choices made, with rationale
@@ -37,6 +38,7 @@ For each file:
    - **Open Questions** — unresolved issues
 
 Filter out:
+
 - Exploratory rambling without conclusions
 - Rejected alternatives (unless the rejection itself is the insight)
 - Temporary workarounds (unless they became permanent)

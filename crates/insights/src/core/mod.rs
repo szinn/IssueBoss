@@ -1,3 +1,4 @@
+pub mod claude_md;
 pub mod commit;
 pub mod git;
 pub mod gitignore;

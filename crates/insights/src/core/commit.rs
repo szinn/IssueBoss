@@ -169,12 +169,7 @@ mod tests {
         commit(&config, false).unwrap();
 
         // Git log should only have the "init" commit — no "insights update"
-        let local_log = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["log", "--oneline"])
-            .output()
-            .unwrap();
+        let local_log = Command::new("git").arg("-C").arg(repo_path).args(["log", "--oneline"]).output().unwrap();
         let local_log_str = String::from_utf8_lossy(&local_log.stdout);
         assert!(
             !local_log_str.contains("insights update"),

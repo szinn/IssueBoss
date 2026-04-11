@@ -2315,11 +2315,13 @@ mod tests {
 
     #[tokio::test]
     async fn list_artifacts_happy_path() {
-        use ib_core::artifact::{
-            MockArtifactRepository,
-            model::{ArtifactKind, ArtifactToken, IssueArtifact},
+        use ib_core::{
+            artifact::{
+                MockArtifactRepository,
+                model::{ArtifactKind, ArtifactToken, IssueArtifact},
+            },
+            user::UserToken,
         };
-        use ib_core::user::UserToken;
         let issue = fake_issue(10, 1, 1);
         let artifact = IssueArtifact {
             id: 1,
