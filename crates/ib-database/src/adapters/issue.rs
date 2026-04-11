@@ -100,6 +100,7 @@ impl IssueRepository for IssueRepositoryAdapter {
         updater.status = Set(issue.status.to_string());
         updater.priority = Set(issue.priority.to_string());
         updater.size = Set(issue.size.map(|s| s.to_string()));
+        updater.assigned_id = Set(issue.assigned.map(|id| id as i64));
 
         let result = updater.update(db).await.map_err(handle_dberr)?;
 
@@ -127,6 +128,12 @@ impl IssueRepository for IssueRepositoryAdapter {
                 "NOT EXISTS (SELECT 1 FROM issue_relationships ir INNER JOIN issues blocker ON blocker.id = ir.to_issue_id WHERE ir.from_issue_id = issues.id \
                  AND ir.kind = 'DependsOn' AND blocker.status != 'Done')",
             ));
+        }
+        if let Some(submitted_by) = filter.submitted_by {
+            query = query.filter(issues::Column::SubmitterId.eq(submitted_by as i64));
+        }
+        if let Some(assigned_to) = filter.assigned_to {
+            query = query.filter(issues::Column::AssignedId.eq(assigned_to as i64));
         }
 
         let mut rows: Vec<issues::Model> = query.all(db).await.map_err(handle_dberr)?;
@@ -185,6 +192,7 @@ mod tests {
             priority: IssuePriority::High,
             size: None,
             slug: format!("MA-{number}"),
+            submitted_by: 1,
         };
         let created = svc.issue_repository().create(&*tx, record).await.unwrap();
         let found = svc.issue_repository().find_by_id(&*tx, created.id).await.unwrap().unwrap();
@@ -212,6 +220,7 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("ST-{number}"),
+            submitted_by: 1,
         };
         svc.issue_repository().create(&*tx, record).await.unwrap();
         let found = svc.issue_repository().find_by_slug(&*tx, "ST-1").await.unwrap();
@@ -242,6 +251,7 @@ mod tests {
                 priority,
                 size: None,
                 slug: format!("PR-{number}"),
+                submitted_by: 1,
             };
             svc.issue_repository().create(&*tx, record).await.unwrap();
         }
@@ -271,6 +281,7 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: "UP-1".into(),
+            submitted_by: 1,
         };
         let created = svc.issue_repository().create(&*tx, record).await.unwrap();
         let v0 = created.version;
@@ -300,6 +311,7 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: "CF-1".into(),
+            submitted_by: 1,
         };
         let mut issue = svc.issue_repository().create(&*tx, record).await.unwrap();
         issue.version = 99;
@@ -341,10 +353,11 @@ mod tests {
                 number,
                 title: format!("{status}"),
                 description: "".into(),
-                status: status.clone(),
+                status,
                 priority: IssuePriority::Medium,
                 size: None,
                 slug: format!("FL-{number}"),
+                submitted_by: 1,
             };
             svc.issue_repository().create(&*tx, record).await.unwrap();
         }
@@ -383,6 +396,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("BK-{n1}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -402,6 +416,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("BK-{n2}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -421,6 +436,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("BK-{n3}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -481,6 +497,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("RS-{n1}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -500,6 +517,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("RS-{n2}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -553,6 +571,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("CN-{n1}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -572,6 +591,7 @@ mod tests {
                     priority: IssuePriority::Medium,
                     size: None,
                     slug: format!("CN-{n2}"),
+                    submitted_by: 1,
                 },
             )
             .await
@@ -601,5 +621,59 @@ mod tests {
         // so still an active block).
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].slug, canceled_blocker.slug);
+    }
+
+    #[tokio::test]
+    async fn create_sets_submitter_and_assigned_is_null() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("subtest", "subtest", "SB", None::<String>).unwrap())
+            .await
+            .unwrap();
+        let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let record = NewIssueRecord {
+            project_id: project.id,
+            number,
+            title: "Submitter test".into(),
+            description: "".into(),
+            status: IssueStatus::TriageNeeded,
+            priority: IssuePriority::Medium,
+            size: None,
+            slug: format!("SB-{number}"),
+            submitted_by: 42,
+        };
+        let created = svc.issue_repository().create(&*tx, record).await.unwrap();
+        assert_eq!(created.submitter, 42);
+        assert_eq!(created.assigned, None);
+    }
+
+    #[tokio::test]
+    async fn update_sets_assigned_id() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("assigntest", "assigntest", "AT", None::<String>).unwrap())
+            .await
+            .unwrap();
+        let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+        let record = NewIssueRecord {
+            project_id: project.id,
+            number,
+            title: "Assign test".into(),
+            description: "".into(),
+            status: IssueStatus::TriageNeeded,
+            priority: IssuePriority::Medium,
+            size: None,
+            slug: format!("AT-{number}"),
+            submitted_by: 1,
+        };
+        let mut issue = svc.issue_repository().create(&*tx, record).await.unwrap();
+        issue.assigned = Some(7);
+        let updated = svc.issue_repository().update(&*tx, issue).await.unwrap();
+        assert_eq!(updated.assigned, Some(7));
+        assert_eq!(updated.submitter, 1); // submitter is immutable
     }
 }
