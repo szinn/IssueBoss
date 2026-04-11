@@ -72,22 +72,23 @@ struct ArtifactMcp {
     slug: Option<String>,
     kind: String,
     body: serde_json::Value,
-    created_by: String,
+    created_by: UserRefMcp,
     created_at: String,
     updated_at: String,
 }
 
 impl ArtifactMcp {
-    fn from_artifact(a: IssueArtifact) -> Self {
-        Self {
+    async fn from_artifact(core: &Arc<CoreServices>, a: IssueArtifact) -> Result<Self, McpError> {
+        let created_by = resolve_created_by(core, &a.created_by).await?;
+        Ok(Self {
             token: a.token.to_string(),
             slug: a.slug,
             kind: a.kind.to_string(),
             body: a.body,
-            created_by: a.created_by,
+            created_by,
             created_at: a.created_at.to_rfc3339(),
             updated_at: a.updated_at.to_rfc3339(),
-        }
+        })
     }
 }
 
@@ -353,6 +354,24 @@ async fn resolve_user_ref(core: &Arc<CoreServices>, user_id: UserId) -> Result<U
         }),
         None => Ok(UserRefMcp {
             token,
+            username: "unknown".into(),
+            full_name: "unknown".into(),
+        }),
+    }
+}
+
+async fn resolve_created_by(core: &Arc<CoreServices>, created_by: &str) -> Result<UserRefMcp, McpError> {
+    if created_by == "system" {
+        return Ok(UserRefMcp {
+            token: "system".into(),
+            username: "system".into(),
+            full_name: "System".into(),
+        });
+    }
+    match UserToken::parse(created_by) {
+        Ok(token) => resolve_user_ref(core, token.id()).await,
+        Err(_) => Ok(UserRefMcp {
+            token: created_by.into(),
             username: "unknown".into(),
             full_name: "unknown".into(),
         }),
@@ -653,7 +672,7 @@ impl IssueBossServer {
             })
             .await
             .map_err(map_core_err)?;
-        serialize(&ArtifactMcp::from_artifact(artifact))
+        serialize(&ArtifactMcp::from_artifact(&self.core, artifact).await?)
     }
 
     #[tool(description = "Update an artifact's body. StatusTransition artifacts and file path fields are immutable.")]
@@ -673,7 +692,7 @@ impl IssueBossServer {
             .update_artifact(issue.id, &p.artifact_slug, p.body)
             .await
             .map_err(map_core_err)?;
-        serialize(&ArtifactMcp::from_artifact(artifact))
+        serialize(&ArtifactMcp::from_artifact(&self.core, artifact).await?)
     }
 
     #[tool(description = "Remove an artifact. For ResearchTopics, prefer adding a Research artifact with status 'cancelled' instead of removing.")]
@@ -726,7 +745,11 @@ impl IssueBossServer {
             .list_artifacts(issue.id, kinds, p.uncovered_only)
             .await
             .map_err(map_core_err)?;
-        serialize(&artifacts.into_iter().map(ArtifactMcp::from_artifact).collect::<Vec<_>>())
+        let mut mcp_artifacts = Vec::with_capacity(artifacts.len());
+        for artifact in artifacts {
+            mcp_artifacts.push(ArtifactMcp::from_artifact(&self.core, artifact).await?);
+        }
+        serialize(&mcp_artifacts)
     }
 
     #[tool(
@@ -2296,6 +2319,7 @@ mod tests {
             MockArtifactRepository,
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         };
+        use ib_core::user::UserToken;
         let issue = fake_issue(10, 1, 1);
         let artifact = IssueArtifact {
             id: 1,
@@ -2304,7 +2328,7 @@ mod tests {
             kind: ArtifactKind::Comment,
             slug: None,
             body: serde_json::json!({"text": "hello"}),
-            created_by: "U_1".to_string(),
+            created_by: UserToken::new(1_u64).to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -2327,7 +2351,7 @@ mod tests {
             });
         }
 
-        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let core = make_core_with_artifacts_and_user(project_repo, issue_repo, artifact_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
@@ -2342,6 +2366,9 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json.as_array().unwrap().len(), 1);
         assert_eq!(json[0]["kind"], "Comment");
+        assert_eq!(json[0]["created_by"]["token"], UserToken::new(1_u64).to_string());
+        assert_eq!(json[0]["created_by"]["username"], "alice");
+        assert_eq!(json[0]["created_by"]["full_name"], "Alice");
     }
 
     #[tokio::test]
@@ -2791,8 +2818,8 @@ mod tests {
         assert!(json["related_to"].as_array().unwrap().is_empty());
     }
 
-    #[test]
-    fn artifact_mcp_includes_token() {
+    #[tokio::test]
+    async fn artifact_mcp_includes_token() {
         use ib_core::artifact::{ArtifactKind, ArtifactToken, IssueArtifact};
 
         let token = ArtifactToken::new(42);
@@ -2808,7 +2835,13 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        let mcp = ArtifactMcp::from_artifact(artifact);
+        let core = make_core_with_artifacts_and_user(
+            MockProjectRepository::new(),
+            MockIssueRepository::new(),
+            ib_core::artifact::MockArtifactRepository::new(),
+            fake_user(1),
+        );
+        let mcp = ArtifactMcp::from_artifact(&core, artifact).await.unwrap();
         let json = serde_json::to_value(&mcp).unwrap();
 
         assert_eq!(json["token"], token.to_string());
