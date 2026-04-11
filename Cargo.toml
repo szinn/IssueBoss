@@ -20,88 +20,95 @@ repository = "https://github.com/szinn/IssueBoss"
 license = "MIT"
 
 [workspace.dependencies]
+
+# Internal crates
 ib-api = { path = "crates/ib-api" }
 ib-core = { path = "crates/ib-core" }
 ib-database = { path = "crates/ib-database" }
 ib-frontend = { path = "crates/ib-frontend" }
 ib-utils = { path = "crates/ib-utils" }
 
+# Error handling
 anyhow = "1.0.102"
-async-trait = "0.1.89"
-axum = "0.8.8"
-config = "0.15.22"
-derive_builder = "0.20.2"
-log = "0.4.29"
-mimalloc = "0.1.48"
-prost = "0.14.3"
-prost-types = "0.14.3"
-rand = "0.10.0"
-sha2 = "0.11.0"
-mockall = "0.14.0"
-serde_json = "1.0.149"
-sqlx = "0.8.6"
-testcontainers = "0.27.2"
 thiserror = "2.0.18"
+
+# Async
+async-trait = "0.1.89"
+tokio = { version = "1.51.1", default-features = false, features = ["full"] }
 tokio-graceful-shutdown = "0.19.3"
 tokio-stream = "0.1.18"
+tokio-util = { version = "0.7.18", default-features = false, features = ["rt"] }
+
+# Web
+axum = "0.8.8"
+axum_session = { version = "0.19.0", default-features = false }
+axum_session_auth = { version = "0.19.0", default-features = false }
+dioxus = { version = "0.7.5", features = ["fullstack", "router"] }
+dioxus-server = { version = "0.7.5", features = ["router"] }
+hyper = { version = "1.9.0", features = ["full"] }
+hyper-util = { version = "0.1.20", features = [
+    "tokio",
+    "server-auto",
+    "http1",
+] }
+reqwest = { version = "0.13.2", default-features = false, features = [
+    "json",
+    "rustls",
+    "gzip",
+] }
+tower = "0.5.3"
+tower-http = { version = "0.6.8", features = [
+    "compression-full",
+    "limit",
+    "request-id",
+    "trace",
+] }
+
+# Config
+config = "0.15.22"
+
+# Utility
+chrono = { version = "0.4.44", features = ["serde"] }
+derive_builder = "0.20.2"
+mimalloc = "0.1.48"
+
+# Logging
+log = "0.4.29"
+tracing = { version = "0.1.44", features = ["log"] }
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.23", features = [
+    "std",
+    "fmt",
+    "registry",
+    "env-filter",
+    "json",
+] }
+
+# gRPC
+prost = "0.14.3"
+prost-types = "0.14.3"
+tonic = { version = "0.14.5", features = ["tls-native-roots", "tls-ring"] }
 tonic-prost = "0.14.5"
 tonic-prost-build = "0.14.5"
 tonic-reflection = "0.14.5"
-tower = "0.5.3"
-tracing-log = "0.2.0"
 
-[workspace.dependencies.argon2]
-version = "0.5.3"
-features = ["std"]
+# Crypto
+argon2 = { version = "0.5.3", features = ["std"] }
+rand = "0.10.0"
+sha2 = "0.11.0"
 
-[workspace.dependencies.axum_session]
-version = "0.19.0"
-default-features = false
+# Testing
+insta = { version = "1.47.2", features = ["filters"] }
+mockall = "0.14.0"
+testcontainers = "0.27.2"
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
-[workspace.dependencies.axum_session_auth]
-version = "0.19.0"
-default-features = false
+# Serialization
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 
-[workspace.dependencies.chrono]
-version = "0.4.44"
-features = ["serde"]
-
-[workspace.dependencies.clap]
-version = "4.6.0"
-features = ["cargo", "derive", "env"]
-
-[workspace.dependencies.dioxus-server]
-version = "0.7.5"
-features = ["router"]
-
-[workspace.dependencies.dioxus]
-version = "0.7.5"
-features = ["fullstack", "router"]
-
-[workspace.dependencies.hyper]
-version = "1.9.0"
-features = ["full"]
-
-[workspace.dependencies.hyper-util]
-version = "0.1.20"
-features = ["tokio", "server-auto", "http1"]
-
-[workspace.dependencies.insta]
-version = "1.47.2"
-features = ["filters"]
-
-[workspace.dependencies.reqwest]
-version = "0.13.2"
-default-features = false
-features = ["json", "rustls", "gzip"]
-
-[workspace.dependencies.rmcp]
-version = "1.4.0"
-features = ["server", "macros", "transport-streamable-http-server"]
-
-[workspace.dependencies.sea-orm]
-version = "2.0.0-rc.38"
-features = [
+# Database
+sea-orm = { version = "2.0.0-rc.38", features = [
     "debug-print",
     "postgres-array",
     "runtime-tokio-rustls",
@@ -112,11 +119,8 @@ features = [
     "with-json",
     "with-rust_decimal",
     "with-uuid",
-]
-
-[workspace.dependencies.sea-orm-migration]
-version = "2.0.0-rc.38"
-features = [
+] }
+sea-orm-migration = { version = "2.0.0-rc.38", features = [
     "sqlx-postgres",
     "sqlx-sqlite",
     "sqlx-mysql",
@@ -125,41 +129,18 @@ features = [
     "with-json",
     "with-rust_decimal",
     "with-uuid",
-]
+] }
+sqlx = "0.8.6"
 
-[workspace.dependencies.serde]
-version = "1.0.228"
-features = ["derive"]
+# CLI
+clap = { version = "4.6.0", features = ["cargo", "derive", "env"] }
 
-[workspace.dependencies.tokio]
-version = "1.51.1"
-default-features = false
-features = ["full"]
-
-[workspace.dependencies.tokio-util]
-version = "0.7.18"
-default-features = false
-features = ["rt"]
-
-[workspace.dependencies.tonic]
-version = "0.14.5"
-features = ["tls-native-roots", "tls-ring"]
-
-[workspace.dependencies.tower-http]
-version = "0.6.8"
-features = ["compression-full", "limit", "request-id", "trace"]
-
-[workspace.dependencies.tracing]
-version = "0.1.44"
-features = ["log"]
-
-[workspace.dependencies.testcontainers-modules]
-version = "0.15.0"
-features = ["postgres"]
-
-[workspace.dependencies.tracing-subscriber]
-version = "0.3.23"
-features = ["std", "fmt", "registry", "env-filter", "json"]
+# MCP
+rmcp = { version = "1.4.0", features = [
+    "server",
+    "macros",
+    "transport-streamable-http-server",
+] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
