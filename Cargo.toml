@@ -7,6 +7,7 @@ members = [
     "crates/ib-api",
     "crates/ib-frontend",
     "crates/issueboss",
+    "crates/insights",
     "crates/integration-tests",
 ]
 
@@ -106,6 +107,10 @@ testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+toml = "0.8"
+
+# File system
+walkdir = "2"
 
 # Database
 sea-orm = { version = "2.0.0-rc.38", features = [
