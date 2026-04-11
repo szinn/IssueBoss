@@ -2,24 +2,35 @@ use anyhow::Result;
 
 use crate::{
     config::Config,
-    core::{git::run_git, sync::sync},
+    core::{
+        git::{git_is_dirty, run_git},
+        sync::sync,
+    },
 };
 
-/// Sync the repo, stage all changes, commit, and push.
+/// Sync the repo, then commit and push if there are pending changes.
+/// Skips commit+push when the working tree is clean after sync.
 pub fn commit(config: &Config, verbose: bool) -> Result<()> {
     // 1. Sync first (pull + symlinks + searchable)
     sync(config, verbose)?;
 
     let repo = &config.repo;
+
+    // 2. Check if there is anything to commit
+    if git_is_dirty(repo, verbose)?.is_none() {
+        println!("Nothing to commit — insights repo is up to date");
+        return Ok(());
+    }
+
     let timestamp = chrono::Utc::now().to_rfc3339();
 
-    // 2. Stage all changes
+    // 3. Stage all changes
     run_git(repo, &["add", "-A"], verbose)?;
 
-    // 3. Commit (--allow-empty so a no-op sync doesn't fail)
-    run_git(repo, &["commit", "--allow-empty", "-m", &format!("insights update {timestamp}")], verbose)?;
+    // 4. Commit (no --allow-empty: we already checked there's something to commit)
+    run_git(repo, &["commit", "-m", &format!("insights update {timestamp}")], verbose)?;
 
-    // 4. Push
+    // 5. Push
     run_git(repo, &["push"], verbose)?;
 
     Ok(())
@@ -128,6 +139,59 @@ mod tests {
         assert!(
             Path::new(".insights/searchable/shared/research/new-note.md").exists(),
             "searchable hard link for new-note.md missing"
+        );
+
+        std::env::set_current_dir(original).unwrap();
+    }
+
+    #[test]
+    fn commit_skips_when_nothing_to_commit() {
+        let project_dir = tempfile::tempdir().unwrap();
+        let (remote_dir, repo_dir) = setup_repo_with_remote();
+
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(project_dir.path()).unwrap();
+
+        std::fs::create_dir_all(".insights").unwrap();
+        let repo_path = repo_dir.path();
+        std::os::unix::fs::symlink(repo_path.join("projects/myproject/issues"), ".insights/issues").unwrap();
+        std::os::unix::fs::symlink(repo_path.join("shared"), ".insights/shared").unwrap();
+        std::os::unix::fs::symlink(repo_path.join("users/alice"), ".insights/alice").unwrap();
+
+        // Do NOT write any new files — repo should be clean after sync
+
+        let config = Config {
+            repo: repo_path.to_owned(),
+            user: "alice".into(),
+            project: "MyProject".into(),
+        };
+
+        commit(&config, false).unwrap();
+
+        // Git log should only have the "init" commit — no "insights update"
+        let local_log = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["log", "--oneline"])
+            .output()
+            .unwrap();
+        let local_log_str = String::from_utf8_lossy(&local_log.stdout);
+        assert!(
+            !local_log_str.contains("insights update"),
+            "expected no commit when nothing to commit, but got: {local_log_str}"
+        );
+
+        // Remote should also be unchanged
+        let remote_log = Command::new("git")
+            .arg("-C")
+            .arg(remote_dir.path())
+            .args(["log", "--oneline"])
+            .output()
+            .unwrap();
+        let remote_log_str = String::from_utf8_lossy(&remote_log.stdout);
+        assert!(
+            !remote_log_str.contains("insights update"),
+            "expected no push when nothing to commit, but got: {remote_log_str}"
         );
 
         std::env::set_current_dir(original).unwrap();
