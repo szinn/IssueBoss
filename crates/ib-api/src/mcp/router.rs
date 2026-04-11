@@ -22,7 +22,7 @@ pub fn create_mcp_router(core_services: Arc<CoreServices>) -> Router {
             Ok(IssueBossServer::new(core.clone(), user))
         },
         Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
+        StreamableHttpServerConfig::default().disable_allowed_hosts(),
     );
     Router::new()
         .nest_service("/mcp", mcp_service)
