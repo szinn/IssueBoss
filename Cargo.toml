@@ -101,6 +101,7 @@ sha2 = "0.11.0"
 # Testing
 insta = { version = "1.47.2", features = ["filters"] }
 mockall = "0.14.0"
+tempfile = "3"
 testcontainers = "0.27.2"
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
