@@ -28,6 +28,7 @@ pub fn ensure_symlink(link: &Path, target: &Path, verbose: bool) -> Result<()> {
 }
 
 /// Remove a soft symlink at `link`. No-op if it does not exist.
+#[allow(dead_code)]
 pub fn remove_symlink(link: &Path, verbose: bool) -> Result<()> {
     if verbose {
         tracing::trace!("[symlink:check] {}", link.display());

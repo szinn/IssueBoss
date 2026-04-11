@@ -1,8 +1,14 @@
+use std::path::PathBuf;
+
+use anyhow::Context;
+
+use crate::core::init::{InitOptions, init};
+
 #[derive(Debug, clap::Args)]
 pub struct InitArgs {
     /// Absolute path to the local Insights git repo clone
     #[arg(long)]
-    pub repo: std::path::PathBuf,
+    pub repo: PathBuf,
 
     /// Your username (maps to users/<user>/ in the repo)
     #[arg(long)]
@@ -13,7 +19,15 @@ pub struct InitArgs {
     pub project: String,
 }
 
-#[allow(clippy::unnecessary_wraps)]
-pub fn cmd_init(_args: InitArgs, _verbose: bool) -> anyhow::Result<()> {
-    Ok(())
+pub fn cmd_init(args: InitArgs, verbose: bool) -> anyhow::Result<()> {
+    let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    init(
+        InitOptions {
+            repo: args.repo,
+            user: args.user,
+            project: args.project,
+            project_root,
+        },
+        verbose,
+    )
 }
