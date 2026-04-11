@@ -83,6 +83,12 @@ Delegate to the `issueboss:triage` agent via the Agent tool.
 4. **Immediately** transition→{Phase}Review — do NOT wait for user instruction; the gate clears as soon as the artifact exists
 5. Present summary; ask user which phase to advance to next (or Done)
 
+### Dev phase integration
+
+When the dev phase uses `superpowers-extended-cc:finishing-a-development-branch` or `superpowers-extended-cc:executing-plans` to complete work, those skills drive the final steps. **You must still transition the issue to DevReview** as soon as the finishing skill presents its completion options to the user — do not wait for the user to ask. This is the same rule as step 4 above; it applies even when another skill is running the completion flow.
+
+The "immediately transition to Review" rule is an invariant, not a step in a linear flow — it holds regardless of which skill is running at the moment work completes.
+
 ### Research phase
 
 When covering ResearchTopics with Research artifacts:
