@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyhow::Result;
 
 use crate::{
@@ -15,7 +13,7 @@ pub fn sync(config: &Config, verbose: bool) -> Result<()> {
     run_git(repo, &["pull"], verbose)?;
 
     // 2. Re-create symlinks
-    let insights_dir = Path::new(".insights");
+    let insights_dir = Config::insights_dir();
     let project_lower = config.project_lower();
 
     ensure_symlink(&insights_dir.join("issues"), &repo.join(format!("projects/{project_lower}/issues")), verbose)?;
@@ -30,7 +28,7 @@ pub fn sync(config: &Config, verbose: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::{path::Path, process::Command};
 
     use super::*;
 
