@@ -13,6 +13,7 @@ pub struct InitArgs {
     pub project: String,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub fn cmd_init(_args: InitArgs, _verbose: bool) -> anyhow::Result<()> {
     Ok(())
 }
