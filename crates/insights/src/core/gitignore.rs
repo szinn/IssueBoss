@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use anyhow::{Context, Result};
 
@@ -16,8 +16,9 @@ pub fn ensure_gitignore_entry(project_root: &Path, entry: &str, verbose: bool) -
         String::new()
     };
 
+    let entry = entry.trim();
     // Full-line match only (not substring)
-    if content.lines().any(|line| line.trim() == entry.trim()) {
+    if content.lines().any(|line| line.trim() == entry) {
         return Ok(());
     }
 
@@ -30,7 +31,6 @@ pub fn ensure_gitignore_entry(project_root: &Path, entry: &str, verbose: bool) -
     } else {
         format!("\n{entry}\n")
     };
-    use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -69,6 +69,16 @@ mod tests {
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         let count = content.lines().filter(|l| *l == ".insights/").count();
         assert_eq!(count, 1, "expected exactly one .insights/ entry, got {count}");
+    }
+
+    #[test]
+    fn appends_newline_before_entry_when_file_lacks_trailing_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "target/").unwrap();
+        ensure_gitignore_entry(dir.path(), ".insights/", false).unwrap();
+        let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains("target/\n"), "missing newline between entries: {content}");
+        assert!(content.contains(".insights/"), "entry not appended: {content}");
     }
 
     #[test]
