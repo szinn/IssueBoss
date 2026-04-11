@@ -19,7 +19,7 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::TriageInProgress, None)
+        .transition_issue(issue.token, IssueStatus::TriageInProgress, None, 0)
         .await
         .unwrap();
 
@@ -27,7 +27,7 @@ async fn artifact_lifecycle() {
     let err = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::TriageReview, None)
+        .transition_issue(issue.token, IssueStatus::TriageReview, None, 0)
         .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
 
@@ -50,7 +50,7 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::TriageReview, Some("Triage done".into()))
+        .transition_issue(issue.token, IssueStatus::TriageReview, Some("Triage done".into()), 0)
         .await
         .unwrap();
     assert_eq!(issue.status, IssueStatus::TriageReview);
@@ -88,7 +88,7 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchNeeded, None)
+        .transition_issue(issue.token, IssueStatus::ResearchNeeded, None, 0)
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchInProgress, None)
+        .transition_issue(issue.token, IssueStatus::ResearchInProgress, None, 0)
         .await
         .unwrap();
 
@@ -104,7 +104,7 @@ async fn artifact_lifecycle() {
     let err = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchReview, None)
+        .transition_issue(issue.token, IssueStatus::ResearchReview, None, 0)
         .await;
     assert!(matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
 
@@ -138,7 +138,7 @@ async fn artifact_lifecycle() {
     let issue = ctx
         .services
         .issue_service()
-        .transition_issue(issue.token, IssueStatus::ResearchReview, None)
+        .transition_issue(issue.token, IssueStatus::ResearchReview, None, 0)
         .await
         .unwrap();
     assert_eq!(issue.status, IssueStatus::ResearchReview);

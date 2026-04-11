@@ -98,7 +98,9 @@ Read current status → walk forward → add required artifacts at gates → ski
 
 ### Displaying an issue
 
-Show issue fields (slug, title, status, priority, size, description), then a time-ordered list of artifacts (oldest first). Exclude StatusTransition artifacts unless their `reason` is exceptional (non-routine context worth surfacing). For each artifact show kind, slug, datestamp, and relevant body fields.
+Show issue fields (slug, title, status, priority, size, description, submitter full_name, assigned full_name or "unassigned"), then a time-ordered list of artifacts (oldest first). Exclude StatusTransition artifacts unless their `reason` is exceptional (non-routine context worth surfacing). For each artifact show kind, slug, datestamp, creator, and relevant body fields.
+
+**Artifact creator:** Each artifact has a `created_by` field containing a user token or `"system"`. Resolve the token to a name by matching against the issue's `submitter` and `assigned` fields. If no match is found, display the raw token. System-generated artifacts (StatusTransition) show "system" and are excluded from display per the rule above.
 
 ### Listing issues
 

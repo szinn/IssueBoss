@@ -52,6 +52,6 @@ pub async fn add_project_member(services: &CoreServices, project_id: ProjectId, 
 }
 
 pub async fn create_issue(services: &CoreServices, project_id: ProjectId, prefix: &str, title: &str) -> Issue {
-    let new_issue = NewIssue::new(project_id, prefix, title, "", IssuePriority::Medium, None).expect("valid new issue");
+    let new_issue = NewIssue::new(project_id, prefix, title, "", IssuePriority::Medium, None, 0).expect("valid new issue");
     services.issue_service().create_issue(new_issue).await.expect("create_issue fixture failed")
 }

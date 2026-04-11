@@ -6,7 +6,7 @@ use ib_core::{
     issue::{IssueFilter, IssueId, IssuePriority, IssueSize, IssueStatus, NewIssue},
     project::{Project, ProjectId},
     types::Capability,
-    user::User,
+    user::{User, UserId, UserToken},
 };
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -53,25 +53,17 @@ pub struct IssueSummaryMcp {
     pub priority: String,
     pub size: Option<String>,
     pub slug: String,
+    pub submitter: UserRefMcp,
+    pub assigned: Option<UserRefMcp>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-impl IssueSummaryMcp {
-    fn from_issue(issue: ib_core::issue::Issue) -> Self {
-        Self {
-            token: issue.token.to_string(),
-            number: issue.number,
-            title: issue.title,
-            description: issue.description,
-            status: issue.status.to_string(),
-            priority: issue.priority.to_string(),
-            size: issue.size.map(|s| s.to_string()),
-            slug: issue.slug,
-            created_at: issue.created_at.to_rfc3339(),
-            updated_at: issue.updated_at.to_rfc3339(),
-        }
-    }
+#[derive(Debug, serde::Serialize)]
+pub struct UserRefMcp {
+    pub token: String,
+    pub username: String,
+    pub full_name: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -170,6 +162,10 @@ pub struct ListIssuesParams {
     /// When true, omit issues blocked by at least one non-Done dependency
     /// (Canceled dependencies still count as active blockers)
     pub exclude_blocked: Option<bool>,
+    /// Filter by submitter user token, e.g. "U_1"
+    pub submitted_by: Option<String>,
+    /// Filter by assigned user token, e.g. "U_2"
+    pub assigned_to: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -347,6 +343,44 @@ fn build_completeness(status: &IssueStatus, artifacts: &[IssueArtifact]) -> serd
     })
 }
 
+async fn resolve_user_ref(core: &Arc<CoreServices>, user_id: UserId) -> Result<UserRefMcp, McpError> {
+    let token = UserToken::new(user_id).to_string();
+    match core.user_service().find_by_id(user_id).await.map_err(map_core_err)? {
+        Some(u) => Ok(UserRefMcp {
+            token,
+            username: u.username,
+            full_name: u.full_name,
+        }),
+        None => Ok(UserRefMcp {
+            token,
+            username: "unknown".into(),
+            full_name: "unknown".into(),
+        }),
+    }
+}
+
+async fn build_issue_summary_mcp(core: &Arc<CoreServices>, issue: ib_core::issue::Issue) -> Result<IssueSummaryMcp, McpError> {
+    let submitter = resolve_user_ref(core, issue.submitter).await?;
+    let assigned = match issue.assigned {
+        Some(id) => Some(resolve_user_ref(core, id).await?),
+        None => None,
+    };
+    Ok(IssueSummaryMcp {
+        token: issue.token.to_string(),
+        number: issue.number,
+        title: issue.title,
+        description: issue.description,
+        status: issue.status.to_string(),
+        priority: issue.priority.to_string(),
+        size: issue.size.map(|s| s.to_string()),
+        slug: issue.slug,
+        submitter,
+        assigned,
+        created_at: issue.created_at.to_rfc3339(),
+        updated_at: issue.updated_at.to_rfc3339(),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // IssueBossServer
 // ---------------------------------------------------------------------------
@@ -438,11 +472,32 @@ impl IssueBossServer {
                 .transpose()?,
             limit: p.limit,
             exclude_blocked: p.exclude_blocked,
+            submitted_by: p
+                .submitted_by
+                .as_deref()
+                .map(|s| {
+                    UserToken::parse(s)
+                        .map(|t| t.id())
+                        .map_err(|_| McpError::invalid_params(format!("invalid user token: {s}"), None))
+                })
+                .transpose()?,
+            assigned_to: p
+                .assigned_to
+                .as_deref()
+                .map(|s| {
+                    UserToken::parse(s)
+                        .map(|t| t.id())
+                        .map_err(|_| McpError::invalid_params(format!("invalid user token: {s}"), None))
+                })
+                .transpose()?,
         };
 
         let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;
 
-        let summaries: Vec<IssueSummaryMcp> = issues.into_iter().map(IssueSummaryMcp::from_issue).collect();
+        let mut summaries = Vec::with_capacity(issues.len());
+        for issue in issues {
+            summaries.push(build_issue_summary_mcp(&self.core, issue).await?);
+        }
         serialize(&summaries)
     }
 
@@ -476,10 +531,19 @@ impl IssueBossServer {
             .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
             .transpose()?;
 
-        let new_issue = NewIssue::new(project.id, &project.prefix, p.title, p.description.unwrap_or_default(), priority, size).map_err(map_core_err)?;
+        let new_issue = NewIssue::new(
+            project.id,
+            &project.prefix,
+            p.title,
+            p.description.unwrap_or_default(),
+            priority,
+            size,
+            self.user.id,
+        )
+        .map_err(map_core_err)?;
 
         let issue = self.core.issue_service().create_issue(new_issue).await.map_err(map_core_err)?;
-        serialize(&IssueSummaryMcp::from_issue(issue))
+        serialize(&build_issue_summary_mcp(&self.core, issue).await?)
     }
 
     #[tool(description = "Update an existing issue's title, description, priority, or size.")]
@@ -513,7 +577,7 @@ impl IssueBossServer {
         }
 
         let updated = self.core.issue_service().update_issue(issue).await.map_err(map_core_err)?;
-        serialize(&IssueSummaryMcp::from_issue(updated))
+        serialize(&build_issue_summary_mcp(&self.core, updated).await?)
     }
 
     #[tool(
@@ -540,7 +604,7 @@ impl IssueBossServer {
         let updated = self
             .core
             .issue_service()
-            .transition_issue(issue.token, new_status, p.reason)
+            .transition_issue(issue.token, new_status, p.reason, self.user.id)
             .await
             .map_err(map_core_err)?;
 
@@ -553,7 +617,7 @@ impl IssueBossServer {
 
         let completeness = build_completeness(&updated.status, &artifacts);
         serialize(&TransitionIssueMcp {
-            issue: IssueSummaryMcp::from_issue(updated),
+            issue: build_issue_summary_mcp(&self.core, updated).await?,
             completeness,
         })
     }
@@ -811,8 +875,9 @@ impl IssueBossServer {
                 .ok_or_else(|| McpError::invalid_params(format!("issue '{slug}' not found"), None))?;
             self.require_capability(issue.project_id, Capability::ViewIssues).await?;
             let relationships = self.core.relationship_service().list_for_issue(issue.id).await.map_err(map_core_err)?;
+            let issue_summary = build_issue_summary_mcp(&self.core, issue).await?;
             let json = serialize(&serde_json::json!({
-                "issue": IssueSummaryMcp::from_issue(issue),
+                "issue": issue_summary,
                 "relationships": IssueRelationshipsMcp::from(relationships),
             }))?;
             Ok(ReadResourceResult::new(vec![
@@ -937,6 +1002,8 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
+            submitter: 1,
+            assigned: None,
             version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -976,6 +1043,31 @@ mod tests {
         ib_core::create_services(repo_svc)
     }
 
+    /// Like `make_core` but registers the given `User` in the mock user repo
+    /// so that `resolve_user_ref` calls succeed when building
+    /// `IssueSummaryMcp`.
+    fn make_core_with_user(project_repo: MockProjectRepository, issue_repo: MockIssueRepository, user: ib_core::user::User) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
     fn make_core_with_members(
         project_repo: MockProjectRepository,
         issue_repo: MockIssueRepository,
@@ -996,6 +1088,34 @@ mod tests {
         ib_core::create_services(repo_svc)
     }
 
+    fn make_core_with_artifacts_and_user(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        artifact_repo: ib_core::artifact::MockArtifactRepository,
+        user: ib_core::user::User,
+    ) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .artifact_repository(Arc::new(artifact_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
     fn make_core_with_relationships(
         project_repo: MockProjectRepository,
         issue_repo: MockIssueRepository,
@@ -1005,6 +1125,34 @@ mod tests {
         let repo_svc = Arc::new(
             default_repository_service_builder()
                 .user_repository(Arc::new(MockUserRepository::new()))
+                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
+                .project_repository(Arc::new(project_repo))
+                .issue_repository(Arc::new(issue_repo))
+                .relationship_repository(Arc::new(rel_repo) as Arc<dyn ib_core::relationship::IssueRelationshipRepository>)
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    fn make_core_with_relationships_and_user(
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        rel_repo: ib_core::relationship::MockIssueRelationshipRepository,
+        user: ib_core::user::User,
+    ) -> Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let repo_svc = Arc::new(
+            default_repository_service_builder()
+                .user_repository(Arc::new(user_repo))
                 .api_key_repository(Arc::new(MockApiKeyRepository::new()))
                 .project_repository(Arc::new(project_repo))
                 .issue_repository(Arc::new(issue_repo))
@@ -1041,7 +1189,7 @@ mod tests {
             });
         }
 
-        let core = make_core(project_repo, issue_repo);
+        let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
@@ -1052,6 +1200,8 @@ mod tests {
                 size: None,
                 limit: None,
                 exclude_blocked: None,
+                submitted_by: None,
+                assigned_to: None,
             }))
             .await;
 
@@ -1078,6 +1228,8 @@ mod tests {
                 size: None,
                 limit: None,
                 exclude_blocked: None,
+                submitted_by: None,
+                assigned_to: None,
             }))
             .await;
 
@@ -1108,6 +1260,8 @@ mod tests {
                 size: None,
                 limit: None,
                 exclude_blocked: None,
+                submitted_by: None,
+                assigned_to: None,
             }))
             .await;
 
@@ -1149,6 +1303,8 @@ mod tests {
                 size: None,
                 limit: None,
                 exclude_blocked: None,
+                submitted_by: None,
+                assigned_to: None,
             }))
             .await;
 
@@ -1203,6 +1359,8 @@ mod tests {
                 size: None,
                 limit: None,
                 exclude_blocked: None,
+                submitted_by: None,
+                assigned_to: None,
             }))
             .await;
 
@@ -1287,7 +1445,7 @@ mod tests {
             });
         }
 
-        let core = make_core(project_repo, issue_repo);
+        let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
@@ -1303,6 +1461,32 @@ mod tests {
         assert!(result.is_ok());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["slug"], "TP-2");
+    }
+
+    #[tokio::test]
+    async fn issue_summary_mcp_includes_submitter_token_and_unknown_for_deleted_user() {
+        use ib_core::user::MockUserRepository;
+        // fake_issue has submitter: 1, assigned: None
+        let issue = fake_issue(10, 1, 1);
+
+        let mut user_repo = MockUserRepository::new();
+        // find_by_id returns None → deleted user → expect "unknown"
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+
+        let summary = build_issue_summary_mcp(&core, issue).await.unwrap();
+        assert_eq!(summary.submitter.username, "unknown");
+        assert_eq!(summary.submitter.full_name, "unknown");
+        assert!(summary.submitter.token.starts_with("U_"));
+        assert!(summary.assigned.is_none());
     }
 
     #[tokio::test]
@@ -1386,7 +1570,7 @@ mod tests {
             });
         }
 
-        let core = make_core(project_repo, issue_repo);
+        let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
@@ -1504,6 +1688,7 @@ mod tests {
         let transitioned = {
             let mut i = issue.clone();
             i.status = IssueStatus::TriageInProgress;
+            i.assigned = Some(1);
             i
         };
 
@@ -1527,7 +1712,7 @@ mod tests {
             let t = transitioned.clone();
             issue_repo
                 .expect_update()
-                .withf(|_, i| i.status == IssueStatus::TriageInProgress)
+                .withf(|_, i| i.status == IssueStatus::TriageInProgress && i.assigned == Some(1))
                 .returning(move |_, _| {
                     let t = t.clone();
                     Box::pin(async move { Ok(t) })
@@ -1551,7 +1736,7 @@ mod tests {
             })
         });
 
-        let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
+        let core = make_core_with_artifacts_and_user(project_repo, issue_repo, artifact_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server
@@ -1699,7 +1884,7 @@ mod tests {
             .expect_list_for_issue()
             .returning(|_, _| Box::pin(async { Ok(IssueRelationships::default()) }));
 
-        let core = make_core_with_relationships(project_repo, issue_repo, rel_repo);
+        let core = make_core_with_relationships_and_user(project_repo, issue_repo, rel_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
 
         let result = server.read_resource_inner("issueboss://issues/TP-1").await;

@@ -303,6 +303,8 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
+            submitter: 0,
+            assigned: None,
             version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),

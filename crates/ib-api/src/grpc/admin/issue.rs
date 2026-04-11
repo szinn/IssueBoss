@@ -25,7 +25,8 @@ pub(crate) mod handler {
             .size
             .map(|s| s.parse().map_err(|_| Error::Validation(format!("unknown size: {s}"))))
             .transpose()?;
-        let new_issue = NewIssue::new(project.id, &project.prefix, req.title, req.description, priority, size)?;
+        // gRPC admin route has no authenticated user context — use a sentinel value
+        let new_issue = NewIssue::new(project.id, &project.prefix, req.title, req.description, priority, size, 0)?;
         let issue = core.issue_service().create_issue(new_issue).await?;
         issue_to_proto(core, issue, &project.slug).await
     }
@@ -74,7 +75,8 @@ pub(crate) mod handler {
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
-        let updated = core.issue_service().transition_issue(issue.token, new_status, None).await?;
+        // gRPC admin route has no authenticated user context — use a sentinel value
+        let updated = core.issue_service().transition_issue(issue.token, new_status, None, 0).await?;
         issue_to_proto(core, updated, &project_slug).await
     }
 
@@ -114,6 +116,8 @@ pub(crate) mod handler {
                 .transpose()?,
             limit: req.limit,
             exclude_blocked: req.exclude_blocked,
+            submitted_by: None,
+            assigned_to: None,
         };
         let issues = core.issue_service().list_issues(project.id, filter).await?;
         let mut responses = Vec::with_capacity(issues.len());
@@ -385,6 +389,8 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
+            submitter: 0,
+            assigned: None,
             version: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
