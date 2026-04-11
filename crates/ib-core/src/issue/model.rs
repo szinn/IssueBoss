@@ -3,7 +3,7 @@ use std::{fmt, str::FromStr};
 use chrono::{DateTime, Utc};
 use ib_utils::{Token, define_token_prefix};
 
-use crate::project::ProjectId;
+use crate::{project::ProjectId, user::UserId};
 
 define_token_prefix!(IssueTokenPrefix, "I_");
 
@@ -26,7 +26,7 @@ pub type IssueToken = Token<IssueTokenPrefix, IssueId, { i64::MAX as u128 }>;
 
 // ── Enumerations ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum IssueStatus {
     // Triage category
     TriageNeeded,
@@ -158,6 +158,8 @@ pub struct Issue {
     pub size: Option<IssueSize>,
     pub slug: String,
     pub version: u64,
+    pub submitter: UserId,
+    pub assigned: Option<UserId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -173,6 +175,7 @@ pub struct NewIssue {
     pub description: String,
     pub priority: IssuePriority,
     pub size: Option<IssueSize>,
+    pub submitted_by: UserId,
 }
 
 impl NewIssue {
@@ -183,6 +186,7 @@ impl NewIssue {
         description: impl Into<String>,
         priority: IssuePriority,
         size: Option<IssueSize>,
+        submitted_by: UserId,
     ) -> Result<Self, crate::Error> {
         let title = title.into();
         if title.trim().is_empty() {
@@ -195,6 +199,7 @@ impl NewIssue {
             description: description.into(),
             priority,
             size,
+            submitted_by,
         })
     }
 }
@@ -211,6 +216,7 @@ pub struct NewIssueRecord {
     pub priority: IssuePriority,
     pub size: Option<IssueSize>,
     pub slug: String,
+    pub submitted_by: UserId,
 }
 
 /// Filters for `IssueRepository::list`.
@@ -221,6 +227,8 @@ pub struct IssueFilter {
     pub size: Option<IssueSize>,
     pub limit: Option<u64>,
     pub exclude_blocked: Option<bool>,
+    pub submitted_by: Option<UserId>,
+    pub assigned_to: Option<UserId>,
 }
 
 /// Derives the immutable slug for an issue at creation time.
@@ -312,6 +320,13 @@ impl IssueStatus {
             | (Self::DevReview,       Self::Done)
         )
     }
+
+    pub fn is_in_progress(self) -> bool {
+        matches!(
+            self,
+            Self::TriageInProgress | Self::ResearchInProgress | Self::SpecInProgress | Self::PlanInProgress | Self::DevInProgress
+        )
+    }
 }
 
 #[cfg(test)]
@@ -329,15 +344,16 @@ mod tests {
 
     #[test]
     fn new_issue_rejects_empty_title() {
-        let err = NewIssue::new(1, "BB", "", "", IssuePriority::Medium, None).unwrap_err();
+        let err = NewIssue::new(1, "BB", "", "", IssuePriority::Medium, None, 1).unwrap_err();
         assert!(matches!(err, crate::Error::Validation(_)));
     }
 
     #[test]
     fn new_issue_accepts_valid_input() {
-        let i = NewIssue::new(1, "BB", "Fix login", "", IssuePriority::High, None).unwrap();
+        let i = NewIssue::new(1, "BB", "Fix login", "", IssuePriority::High, None, 1).unwrap();
         assert_eq!(i.title, "Fix login");
         assert_eq!(i.priority, IssuePriority::High);
+        assert_eq!(i.submitted_by, 1);
     }
 
     #[test]
@@ -408,6 +424,8 @@ mod tests {
             size: None,
             slug: "BB-42".into(),
             version: 0,
+            submitter: 1,
+            assigned: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -569,5 +587,25 @@ mod tests {
     #[test]
     fn spec_review_can_reach_dev_needed() {
         assert!(IssueStatus::SpecReview.can_transition_to(&IssueStatus::DevNeeded));
+    }
+
+    #[test]
+    fn is_in_progress_returns_true_for_all_inprogress_states() {
+        assert!(IssueStatus::TriageInProgress.is_in_progress());
+        assert!(IssueStatus::ResearchInProgress.is_in_progress());
+        assert!(IssueStatus::SpecInProgress.is_in_progress());
+        assert!(IssueStatus::PlanInProgress.is_in_progress());
+        assert!(IssueStatus::DevInProgress.is_in_progress());
+    }
+
+    #[test]
+    fn is_in_progress_returns_false_for_non_inprogress_states() {
+        assert!(!IssueStatus::TriageNeeded.is_in_progress());
+        assert!(!IssueStatus::TriageReview.is_in_progress());
+        assert!(!IssueStatus::ResearchNeeded.is_in_progress());
+        assert!(!IssueStatus::DevReview.is_in_progress());
+        assert!(!IssueStatus::Done.is_in_progress());
+        assert!(!IssueStatus::Backlog.is_in_progress());
+        assert!(!IssueStatus::Canceled.is_in_progress());
     }
 }

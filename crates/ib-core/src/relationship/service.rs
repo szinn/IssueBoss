@@ -139,6 +139,8 @@ mod tests {
             size: None,
             slug: slug.to_owned(),
             version: 0,
+            submitter: 1,
+            assigned: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

@@ -5,6 +5,7 @@ use crate::{
     Error, RepositoryError,
     artifact::model::{ArtifactKind, IssueArtifact, NewArtifact},
     repository::RepositoryService,
+    user::UserId,
     with_read_only_transaction, with_transaction,
 };
 
@@ -16,7 +17,7 @@ pub trait IssueService: Send + Sync {
     async fn find_by_token(&self, token: IssueToken) -> Result<Option<Issue>, Error>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Issue>, Error>;
     async fn list_issues(&self, project_id: crate::project::ProjectId, filter: IssueFilter) -> Result<Vec<Issue>, Error>;
-    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>) -> Result<Issue, Error>;
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>, triggered_by: UserId) -> Result<Issue, Error>;
 }
 
 pub(crate) struct IssueServiceImpl {
@@ -52,6 +53,7 @@ impl IssueService for IssueServiceImpl {
                         priority: new_issue.priority,
                         size: new_issue.size,
                         slug,
+                        submitted_by: new_issue.submitted_by,
                     },
                 )
                 .await
@@ -62,7 +64,7 @@ impl IssueService for IssueServiceImpl {
         with_transaction!(self, issue_repository, |tx| issue_repository.update(tx, issue).await)
     }
 
-    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>) -> Result<Issue, Error> {
+    async fn transition_issue(&self, token: IssueToken, new_status: IssueStatus, reason: Option<String>, triggered_by: UserId) -> Result<Issue, Error> {
         with_transaction!(self, issue_repository, artifact_repository, |tx| {
             let mut issue = issue_repository
                 .find_by_id(tx, token.id())
@@ -76,6 +78,13 @@ impl IssueService for IssueServiceImpl {
             let final_reason = reason.or(auto_reason).unwrap_or_default();
             let from_str = issue.status.to_string();
             let to_str = new_status.to_string();
+
+            // Update assigned based on transition direction
+            if new_status.is_in_progress() {
+                issue.assigned = Some(triggered_by);
+            }
+            // Exiting InProgress: leave assigned unchanged (last assignee retained)
+
             issue.status = new_status;
             let updated = issue_repository.update(tx, issue).await?;
             artifact_repository
@@ -89,6 +98,7 @@ impl IssueService for IssueServiceImpl {
                             "from": from_str,
                             "to": to_str,
                             "reason": final_reason,
+                            "triggered_by_id": triggered_by,
                         }),
                         created_by: "system".into(),
                     },
@@ -275,6 +285,7 @@ mod tests {
         issue::{Issue, IssueFilter, IssueId, IssuePriority, IssueStatus, IssueToken, NewIssue, repository::MockIssueRepository},
         project::{ProjectId, ProjectToken, model::Project, repository::MockProjectRepository},
         repository::testing::default_repository_service_builder,
+        user::UserId,
     };
 
     fn fake_project(id: ProjectId) -> Project {
@@ -307,6 +318,8 @@ mod tests {
             size: None,
             slug: format!("TP-{number}-issue-{number}"),
             version: 0,
+            submitter: 1 as UserId,
+            assigned: None,
             created_at: now,
             updated_at: now,
         }
@@ -356,7 +369,7 @@ mod tests {
         });
         let svc = make_svc(project_repo, issue_repo);
         let result = svc
-            .create_issue(NewIssue::new(1, "TP", "Fix login", "", IssuePriority::High, None).unwrap())
+            .create_issue(NewIssue::new(1, "TP", "Fix login", "", IssuePriority::High, None, 1).unwrap())
             .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().number, 1);
@@ -368,7 +381,7 @@ mod tests {
         project_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         let svc = make_svc(project_repo, MockIssueRepository::new());
         let result = svc
-            .create_issue(NewIssue::new(999, "TP", "Fix", "", IssuePriority::Medium, None).unwrap())
+            .create_issue(NewIssue::new(999, "TP", "Fix", "", IssuePriority::Medium, None, 1).unwrap())
             .await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
@@ -475,7 +488,7 @@ mod tests {
             })
         });
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, 1u64).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().status, IssueStatus::TriageInProgress);
     }
@@ -493,7 +506,7 @@ mod tests {
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // TriageNeeded → DevReview jumps categories — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::DevReview, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::DevReview, None, 1u64).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
@@ -502,7 +515,7 @@ mod tests {
         let mut issue_repo = MockIssueRepository::new();
         issue_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
-        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::TriageInProgress, None).await;
+        let result = svc.transition_issue(IssueToken::new(999), IssueStatus::TriageInProgress, None, 1u64).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
@@ -519,7 +532,7 @@ mod tests {
         }
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // TriageNeeded → TriageNeeded is a self-transition — illegal
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageNeeded, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageNeeded, None, 1u64).await;
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
@@ -538,7 +551,7 @@ mod tests {
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageReview, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageReview, None, 1u64).await;
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
     }
 
@@ -557,7 +570,7 @@ mod tests {
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::SpecNeeded, None, 1u64).await;
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_triage_result"));
     }
 
@@ -594,7 +607,173 @@ mod tests {
         }
 
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
-        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchReview, None).await;
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchReview, None, 1u64).await;
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "uncovered_research_topics"));
+    }
+
+    #[tokio::test]
+    async fn transition_to_inprogress_sets_assigned() {
+        let issue = fake_issue(42, 1, 3); // TriageNeeded, assigned: None
+        let mut after = issue.clone();
+        after.status = IssueStatus::TriageInProgress;
+        after.assigned = Some(7); // triggered_by = 7
+
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let a = after.clone();
+            issue_repo
+                .expect_update()
+                .withf(|_, i| i.status == IssueStatus::TriageInProgress && i.assigned == Some(7))
+                .returning(move |_, _| {
+                    let a = a.clone();
+                    Box::pin(async move { Ok(a) })
+                });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
+        artifact_repo.expect_create().returning(|_, _| {
+            Box::pin(async {
+                Ok(IssueArtifact {
+                    id: 1,
+                    token: ArtifactToken::new(1),
+                    issue_id: 42,
+                    kind: ArtifactKind::StatusTransition,
+                    slug: None,
+                    body: serde_json::json!({}),
+                    created_by: "system".into(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+            })
+        });
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, 7).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().assigned, Some(7));
+    }
+
+    #[tokio::test]
+    async fn transition_out_of_inprogress_retains_assigned() {
+        let mut issue = fake_issue(42, 1, 3);
+        issue.status = IssueStatus::TriageInProgress;
+        issue.assigned = Some(7);
+
+        let mut after = issue.clone();
+        after.status = IssueStatus::TriageReview;
+        // assigned stays Some(7) — not cleared
+
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let a = after.clone();
+            issue_repo
+                .expect_update()
+                // assigned must still be Some(7) — not cleared
+                .withf(|_, i| i.status == IssueStatus::TriageReview && i.assigned == Some(7))
+                .returning(move |_, _| {
+                    let a = a.clone();
+                    Box::pin(async move { Ok(a) })
+                });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        // TriageInProgress → TriageReview requires a TriageResult
+        artifact_repo.expect_list().returning(|_, _, _| {
+            Box::pin(async {
+                Ok(vec![IssueArtifact {
+                    id: 10,
+                    token: ArtifactToken::new(10),
+                    issue_id: 42,
+                    kind: ArtifactKind::TriageResult,
+                    slug: Some("triage".into()),
+                    body: serde_json::json!({"path": "some/path.md"}),
+                    created_by: "system".into(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                }])
+            })
+        });
+        artifact_repo.expect_create().returning(|_, _| {
+            Box::pin(async {
+                Ok(IssueArtifact {
+                    id: 2,
+                    token: ArtifactToken::new(2),
+                    issue_id: 42,
+                    kind: ArtifactKind::StatusTransition,
+                    slug: None,
+                    body: serde_json::json!({}),
+                    created_by: "system".into(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+            })
+        });
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageReview, None, 7).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().assigned, Some(7));
+    }
+
+    #[tokio::test]
+    async fn status_transition_artifact_body_includes_triggered_by_id() {
+        let issue = fake_issue(42, 1, 3); // TriageNeeded
+        let mut after = issue.clone();
+        after.status = IssueStatus::TriageInProgress;
+        after.assigned = Some(5);
+
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_id().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let a = after.clone();
+            issue_repo.expect_update().returning(move |_, _| {
+                let a = a.clone();
+                Box::pin(async move { Ok(a) })
+            });
+        }
+        let mut artifact_repo = MockArtifactRepository::new();
+        artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
+        // Capture the artifact body to assert on it
+        artifact_repo
+            .expect_create()
+            .withf(|_, new_artifact| {
+                let body = &new_artifact.body;
+                body.get("triggered_by_id").and_then(|v| v.as_u64()) == Some(5) && new_artifact.created_by == "system"
+            })
+            .returning(|_, _| {
+                Box::pin(async {
+                    Ok(IssueArtifact {
+                        id: 3,
+                        token: ArtifactToken::new(3),
+                        issue_id: 42,
+                        kind: ArtifactKind::StatusTransition,
+                        slug: None,
+                        body: serde_json::json!({}),
+                        created_by: "system".into(),
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                    })
+                })
+            });
+        let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
+        let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, 5).await;
+        assert!(result.is_ok());
     }
 }

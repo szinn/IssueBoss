@@ -52,8 +52,8 @@ Plan: singleton (slug "plan"), {path}, gates PlanInProgress→PlanReview, path={
 
 **File naming:** `{issue-slug}` in paths must use the issue's slug exactly as returned by the API — preserve the project prefix casing (e.g. `IB-3-plan.md`, not `ib-3-plan.md`).
 Research: caller slug, {topic_token, status, path}, covers a ResearchTopic, path={insights_dir}/shared/research/{kebab-summary}.md
-  **topic_token must be the artifact TOKEN of the ResearchTopic** (e.g. `A_8GWH1GYSR30P4`), not its slug.
-  Call list_artifacts to retrieve ResearchTopic tokens before adding Research artifacts.
+**topic_token must be the artifact TOKEN of the ResearchTopic** (e.g. `A_8GWH1GYSR30P4`), not its slug.
+Call list_artifacts to retrieve ResearchTopic tokens before adding Research artifacts.
 ResearchTopic: caller slug, {description} or {path}, uncovered topics block ResearchReview
 Comment: caller slug, {text}
 Handoff: caller slug, {path}, file-backed, move_artifact applies, path={insights_dir}/issues/{issue-slug}-handoff.md
@@ -87,6 +87,7 @@ StatusTransition: system-generated only — do not create manually
 ### Research phase
 
 When covering ResearchTopics with Research artifacts:
+
 1. Call list_artifacts (kinds=["ResearchTopic"]) to get each topic's `token` field
 2. For each Research artifact, set `topic_token` to the ResearchTopic's `token` value (e.g. `A_8GWH1GYSR30P4`) — **not** the slug
 3. All ResearchTopics must be covered before ResearchInProgress→ResearchReview gate passes
