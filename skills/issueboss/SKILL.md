@@ -40,6 +40,8 @@ ResearchInProgress→ResearchReview requires all ResearchTopics covered
 
 ## Artifacts
 
+**NOTE:** The `.insights` directory is not under version control so no `git`/`jj` actions should be applied to files created/edited in `.insights`.
+
 File-backed (TriageResult, Spec, Plan, Research, Handoff): path immutable after creation; use move_artifact if file moves.
 Singleton (TriageResult, Spec, Plan): auto-assigned slug, one per issue.
 Caller-slug (Research, ResearchTopic, Comment, Handoff): caller provides slug — lowercase letters, digits, hyphens only.
@@ -63,11 +65,12 @@ StatusTransition: system-generated only — do not create manually
 2. Read issue via issueboss://issues/{slug}
 3. transition→TriageInProgress
 4. Investigate scope (code, existing artifacts)
-5. Determine size/risk/phases needed
-6. Write triage doc using the Write tool directly — do NOT run mkdir
-7. add_artifact kind=TriageResult with path to triage doc
-8. **Immediately** transition→TriageReview — do NOT wait for user instruction
-9. Present summary; ask user which phase to advance to
+5. Identify open questions
+6. Determine size/risk/phases needed
+7. Write triage doc using the Write tool directly — do NOT run mkdir
+8. add_artifact kind=TriageResult with path to triage doc
+9. **Immediately** transition→TriageReview — do NOT wait for user instruction
+10. Present summary; ask user which phase to advance to
 
 > Phase-specific guidance (research, spec, plan, dev skills) to be added.
 

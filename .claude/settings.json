@@ -42,6 +42,7 @@
       "mcp__issueboss__list_issues",
       "mcp__issueboss__move_artifact",
       "mcp__issueboss__transition_issue",
+      "mcp__issueboss__update_artifact",
       "mcp__issueboss__update_issue"
     ]
   },

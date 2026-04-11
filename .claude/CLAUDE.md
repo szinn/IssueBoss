@@ -112,5 +112,4 @@ To verify the baseline state, run `just component-tests`.
 ## Conventions
 
 - **Commits:** Valid scopes: `api`, `cli`, `core`, `database`, `frontend` (match crate names)
-- **Error handling:** `thiserror` fo
-- r `core`, `api`, `database`; `anyhow` for `bookboss` (binary)
+- **Error handling:** `thiserror` for `core`, `api`, `database`; `anyhow` for `bookboss` (binary)
