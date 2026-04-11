@@ -35,6 +35,8 @@ impl From<issues::Model> for Issue {
             size: model.size.and_then(|s| s.parse().ok()),
             slug: model.slug,
             version: model.version as u64,
+            submitter: model.submitter_id as u64,
+            assigned: model.assigned_id.map(|id| id as u64),
             created_at: model.created_at.with_timezone(&chrono::Utc),
             updated_at: model.updated_at.with_timezone(&chrono::Utc),
         }
@@ -54,6 +56,8 @@ impl IssueRepository for IssueRepositoryAdapter {
             priority: Set(record.priority.to_string()),
             size: Set(record.size.map(|s| s.to_string())),
             slug: Set(record.slug),
+            submitter_id: Set(record.submitted_by as i64),
+            assigned_id: Set(None),
             ..issues::ActiveModel::new()
         };
         let inserted = model.insert(db).await.map_err(handle_dberr)?;

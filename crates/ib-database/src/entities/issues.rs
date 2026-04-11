@@ -20,6 +20,8 @@ pub struct Model {
     #[sea_orm(unique)]
     pub slug: String,
     pub version: i64,
+    pub submitter_id: i64,
+    pub assigned_id: Option<i64>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
