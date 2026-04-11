@@ -76,6 +76,7 @@ impl IssueSummaryMcp {
 
 #[derive(Debug, serde::Serialize)]
 struct ArtifactMcp {
+    token: String,
     slug: Option<String>,
     kind: String,
     body: serde_json::Value,
@@ -87,6 +88,7 @@ struct ArtifactMcp {
 impl ArtifactMcp {
     fn from_artifact(a: IssueArtifact) -> Self {
         Self {
+            token: a.token.to_string(),
             slug: a.slug,
             kind: a.kind.to_string(),
             body: a.body,
@@ -2602,6 +2604,29 @@ mod tests {
         assert_eq!(json["depends_on"][0]["slug"], "TP-2");
         assert!(json["blocks"].as_array().unwrap().is_empty());
         assert!(json["related_to"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn artifact_mcp_includes_token() {
+        use ib_core::artifact::{ArtifactKind, ArtifactToken, IssueArtifact};
+
+        let token = ArtifactToken::new(42);
+        let artifact = IssueArtifact {
+            id: 1,
+            token,
+            issue_id: 10,
+            kind: ArtifactKind::Comment,
+            slug: Some("my-comment".into()),
+            body: serde_json::json!({"text": "hello"}),
+            created_by: "U_test".into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let mcp = ArtifactMcp::from_artifact(artifact);
+        let json = serde_json::to_value(&mcp).unwrap();
+
+        assert_eq!(json["token"], token.to_string());
     }
 
     #[tokio::test]
