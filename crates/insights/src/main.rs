@@ -12,6 +12,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init(args) => commands::init::cmd_init(args, cli.verbose),
         Commands::Sync => commands::sync::cmd_sync(cli.verbose),
+        Commands::Status => commands::status::cmd_status(cli.verbose),
         Commands::Commit => commands::commit::cmd_commit(cli.verbose),
     }
 }

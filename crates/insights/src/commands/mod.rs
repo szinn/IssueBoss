@@ -1,5 +1,6 @@
 pub mod commit;
 pub mod init;
+pub mod status;
 pub mod sync;
 
 #[derive(Debug, clap::Parser)]
@@ -26,6 +27,9 @@ pub enum Commands {
 
     #[command(about = "Pull latest from the Insights repo and rebuild local state")]
     Sync,
+
+    #[command(about = "Sync and show pending changes in the Insights repo")]
+    Status,
 
     #[command(about = "Sync and commit all pending changes to the Insights repo")]
     Commit,
