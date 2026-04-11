@@ -34,7 +34,7 @@ changelog:
 [doc('Build all applications')]
 build:
     # just tailwindcss
-    cargo build --bin issueboss --all-features
+    cargo build --bin issueboss --bin insights --all-features
 
 [doc('Run IssueBoss')]
 run:

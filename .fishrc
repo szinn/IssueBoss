@@ -1,4 +1,9 @@
-# function: ib
-function ib
-    cargo run --features server -- $argv
+# function: ibd
+function ibd
+    cargo run --bin issueboss --features server -- $argv
+end
+
+# function: insd
+function insd
+    cargo run --bin insights -- $argv
 end
