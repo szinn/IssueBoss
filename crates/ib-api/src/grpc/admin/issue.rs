@@ -4,6 +4,7 @@ pub(crate) mod handler {
     use ib_core::{
         CoreServices, Error, RepositoryError,
         issue::{IssueFilter, NewIssue},
+        user::UserId,
     };
 
     use crate::grpc::{
@@ -11,7 +12,7 @@ pub(crate) mod handler {
         admin_proto::{CreateIssueRequest, GetIssueRequest, IssueResponse, ListIssuesRequest, ListIssuesResponse, TransitionIssueRequest, UpdateIssueRequest},
     };
 
-    pub(crate) async fn create_issue(core: &Arc<CoreServices>, req: CreateIssueRequest) -> Result<IssueResponse, Error> {
+    pub(crate) async fn create_issue(core: &Arc<CoreServices>, req: CreateIssueRequest, submitted_by: UserId) -> Result<IssueResponse, Error> {
         let project = core
             .project_service()
             .find_by_slug(&req.project_slug)
@@ -25,8 +26,7 @@ pub(crate) mod handler {
             .size
             .map(|s| s.parse().map_err(|_| Error::Validation(format!("unknown size: {s}"))))
             .transpose()?;
-        // gRPC admin route has no authenticated user context — use a sentinel value
-        let new_issue = NewIssue::new(project.id, &project.prefix, req.title, req.description, priority, size, 0)?;
+        let new_issue = NewIssue::new(project.id, &project.prefix, req.title, req.description, priority, size, submitted_by)?;
         let issue = core.issue_service().create_issue(new_issue).await?;
         issue_to_proto(core, issue, &project.slug).await
     }
@@ -59,7 +59,7 @@ pub(crate) mod handler {
         issue_to_proto(core, updated, &project_slug).await
     }
 
-    pub(crate) async fn transition_issue(core: &Arc<CoreServices>, req: TransitionIssueRequest) -> Result<IssueResponse, Error> {
+    pub(crate) async fn transition_issue(core: &Arc<CoreServices>, req: TransitionIssueRequest, triggered_by: UserId) -> Result<IssueResponse, Error> {
         let new_status: ib_core::issue::IssueStatus = req
             .new_status
             .parse()
@@ -75,8 +75,7 @@ pub(crate) mod handler {
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
-        // gRPC admin route has no authenticated user context — use a sentinel value
-        let updated = core.issue_service().transition_issue(issue.token, new_status, None, 0).await?;
+        let updated = core.issue_service().transition_issue(issue.token, new_status, None, triggered_by).await?;
         issue_to_proto(core, updated, &project_slug).await
     }
 
@@ -389,9 +388,9 @@ mod tests {
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}"),
-            submitter: 0,
-            assigned: None,
             version: 0,
+            submitter: 1,
+            assigned: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -425,10 +424,12 @@ mod tests {
                 Box::pin(async move { Ok(i) })
             });
         }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
-                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .user_repository(std::sync::Arc::new(user_repo))
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
@@ -446,11 +447,13 @@ mod tests {
                 priority: "High".into(),
                 size: None,
             },
+            1,
         )
         .await
         .unwrap();
         assert_eq!(resp.project_slug, "myapp");
         assert_eq!(resp.number, 1);
+        assert_eq!(resp.submitter, "unknown");
     }
 
     #[tokio::test]
@@ -546,10 +549,12 @@ mod tests {
                 })
             })
         });
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
-                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .user_repository(std::sync::Arc::new(user_repo))
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
@@ -565,6 +570,7 @@ mod tests {
                 slug: "MA-1".into(),
                 new_status: "TriageInProgress".into(),
             },
+            1,
         )
         .await
         .unwrap();
@@ -598,10 +604,12 @@ mod tests {
                 Box::pin(async move { Ok(Some(i)) })
             });
         }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
-                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .user_repository(std::sync::Arc::new(user_repo))
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .project_repository(std::sync::Arc::new(project_repo))
                 .issue_repository(std::sync::Arc::new(issue_repo))
@@ -616,6 +624,7 @@ mod tests {
                 slug: "MA-1".into(),
                 new_status: "DevReview".into(),
             },
+            1,
         )
         .await
         .map_err(crate::grpc::error::map_core_error)
@@ -625,10 +634,12 @@ mod tests {
 
     #[tokio::test]
     async fn transition_issue_unknown_status_returns_invalid_argument() {
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
         let repo_svc = std::sync::Arc::new(
             default_repository_service_builder()
-                .user_repository(std::sync::Arc::new(MockUserRepository::new()))
+                .user_repository(std::sync::Arc::new(user_repo))
                 .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
                 .build()
                 .unwrap(),
@@ -640,11 +651,75 @@ mod tests {
                 slug: "MA-1".into(),
                 new_status: "NotARealStatus".into(),
             },
+            1,
         )
         .await
         .map_err(crate::grpc::error::map_core_error)
         .unwrap_err();
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn create_issue_passes_submitted_by() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue = fake_issue(100, 1, 1);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(1u32) }));
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo
+                .expect_create()
+                // submitted_by should be 42 (our test user id)
+                .withf(|_, r| r.submitted_by == 42)
+                .returning(move |_, _| {
+                    let i = i.clone();
+                    Box::pin(async move { Ok(i) })
+                });
+        }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let resp = handler::create_issue(
+            &core,
+            CreateIssueRequest {
+                project_slug: "myapp".into(),
+                title: "Fix login".into(),
+                description: "".into(),
+                priority: "High".into(),
+                size: None,
+            },
+            42,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.project_slug, "myapp");
+        assert_eq!(resp.submitter, "unknown"); // user 42 not in repo → "unknown"
     }
 
     #[tokio::test]
@@ -674,6 +749,7 @@ mod tests {
                 priority: "InvalidPriority".into(),
                 size: None,
             },
+            1,
         )
         .await
         .map_err(map_core_error)

@@ -187,6 +187,8 @@ message IssueResponse {
   string          created_at    = 10;  // RFC 3339
   string          updated_at    = 11;  // RFC 3339
   IssueRelationshipsProto relationships = 12;
+  string          submitter     = 13;           // username of submitter, "unknown" if deleted
+  optional string assigned      = 14;           // username of assignee, omitted if unassigned
 }
 
 message CreateIssueRequest {

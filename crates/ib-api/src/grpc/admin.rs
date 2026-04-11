@@ -52,6 +52,20 @@ fn project_to_proto(project: ib_core::project::Project) -> ProjectResponse {
 
 async fn issue_to_proto(core: &Arc<CoreServices>, issue: ib_core::issue::Issue, project_slug: &str) -> Result<IssueResponse, ib_core::Error> {
     let relationships = relationship::handler::relationships_for_issue(core, issue.id).await?;
+
+    async fn resolve_username(core: &Arc<CoreServices>, user_id: u64) -> String {
+        match core.user_service().find_by_id(user_id).await {
+            Ok(Some(u)) => u.username,
+            _ => "unknown".to_owned(),
+        }
+    }
+
+    let submitter = resolve_username(core, issue.submitter).await;
+    let assigned = match issue.assigned {
+        Some(id) => Some(resolve_username(core, id).await),
+        None => None,
+    };
+
     Ok(IssueResponse {
         token: issue.token.to_string(),
         project_slug: project_slug.to_owned(),
@@ -65,6 +79,8 @@ async fn issue_to_proto(core: &Arc<CoreServices>, issue: ib_core::issue::Issue, 
         created_at: issue.created_at.to_rfc3339(),
         updated_at: issue.updated_at.to_rfc3339(),
         relationships: Some(relationships),
+        submitter,
+        assigned,
     })
 }
 
@@ -279,7 +295,7 @@ impl AdminService for GrpcAdminService {
             .map_err(map_core_error)?
             .ok_or_else(|| Status::not_found("not found"))?;
         require_capability(&self.core_services, project.id, &user, Capability::CreateIssues).await?;
-        issue::handler::create_issue(&self.core_services, req)
+        issue::handler::create_issue(&self.core_services, req, user.id)
             .await
             .map(Response::new)
             .map_err(map_core_error)
@@ -347,7 +363,7 @@ impl AdminService for GrpcAdminService {
             .map_err(map_core_error)?
             .ok_or_else(|| Status::not_found("not found"))?;
         require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
-        issue::handler::transition_issue(&self.core_services, req)
+        issue::handler::transition_issue(&self.core_services, req, user.id)
             .await
             .map(Response::new)
             .map_err(map_core_error)
