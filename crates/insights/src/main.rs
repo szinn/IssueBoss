@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod core;
 mod tracing;
 
 use clap::Parser;
