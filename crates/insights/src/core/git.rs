@@ -1,12 +1,12 @@
+use std::{path::Path, process::Command};
+
 use anyhow::{Context, Result};
-use std::path::Path;
-use std::process::Command;
 
 /// Run a git command in `repo` directory. Returns stdout as a String.
 /// Emits a TRACE log with the full command when verbose.
 pub fn run_git(repo: &Path, args: &[&str], verbose: bool) -> Result<String> {
     if verbose {
-        tracing::trace!(cmd = format!("git {}", args.join(" ")), cwd = %repo.display(), "cmd");
+        tracing::trace!("[cmd] git -C {} {}", repo.display(), args.join(" "));
     }
     let output = Command::new("git")
         .arg("-C")
@@ -25,29 +25,20 @@ pub fn run_git(repo: &Path, args: &[&str], verbose: bool) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     fn init_git_repo() -> TempDir {
         let dir = tempfile::tempdir().unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(dir.path())
-            .args(["init", "-b", "main"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(dir.path())
-            .args(["config", "user.email", "test@test.com"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(dir.path())
-            .args(["config", "user.name", "Test"])
-            .output()
-            .unwrap();
+        for args in [
+            vec!["init", "-b", "main"],
+            vec!["config", "user.email", "test@test.com"],
+            vec!["config", "user.name", "Test"],
+        ] {
+            let out = Command::new("git").arg("-C").arg(dir.path()).args(&args).output().unwrap();
+            assert!(out.status.success(), "git setup step failed: {args:?}");
+        }
         dir
     }
 
@@ -69,18 +60,10 @@ mod tests {
     fn status_in_clean_repo() {
         let dir = init_git_repo();
         std::fs::write(dir.path().join("README.md"), "hello").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(dir.path())
-            .args(["add", "."])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(dir.path())
-            .args(["commit", "-m", "init"])
-            .output()
-            .unwrap();
+        let add = Command::new("git").arg("-C").arg(dir.path()).args(["add", "."]).output().unwrap();
+        assert!(add.status.success(), "git add failed");
+        let commit = Command::new("git").arg("-C").arg(dir.path()).args(["commit", "-m", "init"]).output().unwrap();
+        assert!(commit.status.success(), "git commit failed");
         let out = run_git(dir.path(), &["status", "--short"], false).unwrap();
         assert!(out.is_empty(), "expected clean repo, got: {out}");
     }
