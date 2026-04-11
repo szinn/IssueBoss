@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -6,10 +6,11 @@ const INSIGHTS_HEADING: &str = "## Insights";
 
 /// Appends an `## Insights` section to the project's CLAUDE.md.
 ///
-/// Idempotent: if `## Insights` already appears in the file the function
-/// is a no-op. Safe to call from `insights init` on every run.
+/// Search order: `.claude/CLAUDE.md` → `CLAUDE.md` in project root → create
+/// root. Idempotent: if `## Insights` already appears in the resolved file,
+/// this is a no-op. Prints which file was created or updated.
 pub fn ensure_claude_md_insights_section(project_root: &Path, user: &str) -> Result<()> {
-    let claude_md = project_root.join("CLAUDE.md");
+    let claude_md = resolve_claude_md(project_root);
 
     let existing = if claude_md.exists() {
         std::fs::read_to_string(&claude_md).with_context(|| format!("Failed to read '{}'", claude_md.display()))?
@@ -21,8 +22,9 @@ pub fn ensure_claude_md_insights_section(project_root: &Path, user: &str) -> Res
         return Ok(());
     }
 
-    let snippet = insights_snippet(user);
+    let action = if claude_md.exists() { "updated" } else { "created" };
 
+    let snippet = insights_snippet(user);
     let content = if existing.is_empty() {
         snippet
     } else {
@@ -31,7 +33,17 @@ pub fn ensure_claude_md_insights_section(project_root: &Path, user: &str) -> Res
 
     std::fs::write(&claude_md, content).with_context(|| format!("Failed to write '{}'", claude_md.display()))?;
 
+    println!("CLAUDE.md {action}: {}", claude_md.display());
+
     Ok(())
+}
+
+/// Resolve which CLAUDE.md to use.
+/// Prefers `.claude/CLAUDE.md` if it exists, otherwise falls back to
+/// `CLAUDE.md` in root.
+fn resolve_claude_md(project_root: &Path) -> PathBuf {
+    let dot_claude = project_root.join(".claude/CLAUDE.md");
+    if dot_claude.exists() { dot_claude } else { project_root.join("CLAUDE.md") }
 }
 
 fn insights_snippet(user: &str) -> String {
@@ -62,16 +74,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn creates_claude_md_when_absent() {
+    fn creates_root_claude_md_when_neither_exists() {
         let dir = tempfile::tempdir().unwrap();
         ensure_claude_md_insights_section(dir.path(), "alice").unwrap();
         let content = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
         assert!(content.contains("## Insights"), "missing ## Insights heading");
         assert!(content.contains(".insights/alice/"), "missing user-specific path");
+        assert!(!dir.path().join(".claude/CLAUDE.md").exists(), "should not create .claude/CLAUDE.md");
     }
 
     #[test]
-    fn appends_to_existing_claude_md() {
+    fn appends_to_dot_claude_claude_md_when_it_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        std::fs::write(dir.path().join(".claude/CLAUDE.md"), "# My Project\n\nExisting content.\n").unwrap();
+        ensure_claude_md_insights_section(dir.path(), "alice").unwrap();
+        let dot_content = std::fs::read_to_string(dir.path().join(".claude/CLAUDE.md")).unwrap();
+        assert!(dot_content.contains("# My Project"), "original content lost");
+        assert!(dot_content.contains("## Insights"), "missing ## Insights heading");
+        assert!(dot_content.contains(".insights/alice/"), "missing user-specific path");
+        assert!(!dir.path().join("CLAUDE.md").exists(), "should not create root CLAUDE.md");
+    }
+
+    #[test]
+    fn prefers_dot_claude_over_root_when_both_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        std::fs::write(dir.path().join(".claude/CLAUDE.md"), "# Dot Claude\n").unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Root\n").unwrap();
+        ensure_claude_md_insights_section(dir.path(), "alice").unwrap();
+        let dot_content = std::fs::read_to_string(dir.path().join(".claude/CLAUDE.md")).unwrap();
+        let root_content = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(dot_content.contains("## Insights"), ".claude/CLAUDE.md should be updated");
+        assert!(!root_content.contains("## Insights"), "root CLAUDE.md should not be touched");
+    }
+
+    #[test]
+    fn appends_to_root_claude_md_when_only_root_exists() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("CLAUDE.md"), "# My Project\n\nSome existing content.\n").unwrap();
         ensure_claude_md_insights_section(dir.path(), "bob").unwrap();
@@ -92,7 +131,18 @@ mod tests {
     }
 
     #[test]
-    fn skips_when_heading_already_in_existing_file() {
+    fn idempotent_for_dot_claude_when_section_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        let original = "# My Project\n\n## Insights\n\nCustom insights section.\n";
+        std::fs::write(dir.path().join(".claude/CLAUDE.md"), original).unwrap();
+        ensure_claude_md_insights_section(dir.path(), "alice").unwrap();
+        let content = std::fs::read_to_string(dir.path().join(".claude/CLAUDE.md")).unwrap();
+        assert_eq!(content, original, "file should be unchanged when ## Insights already present");
+    }
+
+    #[test]
+    fn skips_when_heading_already_in_root_file() {
         let dir = tempfile::tempdir().unwrap();
         let original = "# My Project\n\n## Insights\n\nCustom insights section.\n";
         std::fs::write(dir.path().join("CLAUDE.md"), original).unwrap();
