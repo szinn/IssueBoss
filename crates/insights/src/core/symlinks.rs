@@ -3,15 +3,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 /// Create or re-create a soft symlink at `link` pointing to `target`.
-/// Idempotent: if `link` already points to `target`, does nothing.
+/// Idempotent: if `link` already points to `target` **by exact path bytes**,
+/// does nothing. Pass the same form (absolute or relative) on every call.
 /// If `link` points elsewhere (stale), removes and re-creates.
 pub fn ensure_symlink(link: &Path, target: &Path, verbose: bool) -> Result<()> {
     if verbose {
-        tracing::trace!(
-            kind = "soft",
-            link = %link.display(),
-            "symlink:check"
-        );
+        tracing::trace!("[symlink:check] soft: {}", link.display());
     }
     if link.is_symlink() {
         let current = std::fs::read_link(link).with_context(|| format!("Failed to read symlink '{}'", link.display()))?;
@@ -20,17 +17,12 @@ pub fn ensure_symlink(link: &Path, target: &Path, verbose: bool) -> Result<()> {
         }
         // Stale — remove and re-create
         if verbose {
-            tracing::trace!(link = %link.display(), "symlink:remove");
+            tracing::trace!("[symlink:remove] {}", link.display());
         }
         std::fs::remove_file(link).with_context(|| format!("Failed to remove stale symlink '{}'", link.display()))?;
     }
     if verbose {
-        tracing::trace!(
-            kind = "soft",
-            link = %link.display(),
-            target = %target.display(),
-            "symlink:create"
-        );
+        tracing::trace!("[symlink:create] soft: {} → {}", link.display(), target.display());
     }
     std::os::unix::fs::symlink(target, link).with_context(|| format!("Failed to create symlink '{}' → '{}'", link.display(), target.display()))
 }
@@ -38,11 +30,11 @@ pub fn ensure_symlink(link: &Path, target: &Path, verbose: bool) -> Result<()> {
 /// Remove a soft symlink at `link`. No-op if it does not exist.
 pub fn remove_symlink(link: &Path, verbose: bool) -> Result<()> {
     if verbose {
-        tracing::trace!(link = %link.display(), "symlink:check");
+        tracing::trace!("[symlink:check] {}", link.display());
     }
-    if link.is_symlink() || link.exists() {
+    if link.is_symlink() {
         if verbose {
-            tracing::trace!(link = %link.display(), "symlink:remove");
+            tracing::trace!("[symlink:remove] {}", link.display());
         }
         std::fs::remove_file(link).with_context(|| format!("Failed to remove symlink '{}'", link.display()))?;
     }
@@ -108,5 +100,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let link = dir.path().join("no_such_link");
         remove_symlink(&link, false).unwrap(); // should not error
+    }
+
+    #[test]
+    fn remove_dangling_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone_target = dir.path().join("was_here");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&gone_target, &link).unwrap();
+        // target never existed — dangling symlink; is_symlink() must be true
+        assert!(link.is_symlink());
+        remove_symlink(&link, false).unwrap();
+        assert!(!link.is_symlink());
+    }
+
+    #[test]
+    fn fails_if_parent_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("nonexistent_dir").join("link");
+        let target = dir.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let result = ensure_symlink(&link, &target, false);
+        assert!(result.is_err(), "should fail when parent dir is missing");
     }
 }
