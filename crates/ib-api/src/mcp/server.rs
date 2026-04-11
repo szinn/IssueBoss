@@ -353,6 +353,7 @@ fn build_completeness(status: &IssueStatus, artifacts: &[IssueArtifact]) -> serd
 pub struct IssueBossServer {
     core: Arc<CoreServices>,
     user: User,
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
