@@ -111,7 +111,7 @@ serde_json = "1.0.149"
 toml = "1.1.2"
 
 # File system
-walkdir = "2"
+walkdir = "2.5.0"
 
 # Database
 sea-orm = { version = "2.0.0-rc.38", features = [
