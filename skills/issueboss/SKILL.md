@@ -78,7 +78,57 @@ Delegate to the `issueboss:triage` agent via the Agent tool.
 - **Foreground override:** If the user explicitly asks to wait (e.g., "wait for it", "don't background it", "triage IB-42 synchronously"), omit `run_in_background`.
 - **Agent errors:** If the agent returns an error (e.g., `Error (Step 3): Issue {slug} is in {status}, not TriageNeeded`), display it to the user as-is and do not attempt retry.
 
-> Phase-specific guidance (research, spec, plan, dev skills) to be added.
+### Spec phase
+
+1. transition→SpecInProgress
+2. Invoke `superpowers-extended-cc:brainstorming` to write the spec
+3. The spec file MUST begin with YAML front-matter per `.insights/shared/schema.md`:
+
+   <!-- prettier-ignore -->
+   ```yaml
+   ---
+   type: spec
+   issue: {slug}
+   status: draft
+   created: {YYYY-MM-DD}
+   size: {XS|S|M|L|XL}
+   risk: {low|medium|high}
+   tags:
+     - {relevant-tags}
+   summary: >
+     {one paragraph}
+   ---
+   ```
+
+4. add_artifact kind=Spec with path
+5. **Immediately** transition→SpecReview
+6. When the user approves the spec and advances past SpecReview: update the spec file's
+   front-matter `status` field from `draft` to `approved`, then transition the issue.
+
+### Plan phase
+
+1. transition→PlanInProgress
+2. Invoke `superpowers-extended-cc:writing-plans` to write the plan
+3. The plan file MUST begin with YAML front-matter per `.insights/shared/schema.md`:
+
+   <!-- prettier-ignore -->
+   ```yaml
+   ---
+   type: plan
+   issue: {slug}
+   status: draft
+   created: {YYYY-MM-DD}
+   size: {XS|S|M|L|XL}
+   risk: {low|medium|high}
+   summary: >
+     {one paragraph}
+   ---
+   ```
+
+4. add_artifact kind=Plan with path
+5. **Immediately** transition→PlanReview
+6. When the user approves the plan and advances past PlanReview: update the plan file's
+   front-matter `status` field from `draft` to `approved`, then transition the issue.
 
 ### Phase advancement
 
@@ -101,6 +151,7 @@ When covering ResearchTopics with Research artifacts:
 1. Call list_artifacts (kinds=["ResearchTopic"]) to get each topic's `token` field
 2. For each Research artifact, set `topic_token` to the ResearchTopic's `token` value (e.g. `A_8GWH1GYSR30P4`) — **not** the slug
 3. All ResearchTopics must be covered before ResearchInProgress→ResearchReview gate passes
+4. Research files MUST begin with YAML front-matter per `.insights/shared/schema.md`
 
 ### Walking a completed issue to Done
 

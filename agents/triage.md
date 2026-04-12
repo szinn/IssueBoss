@@ -63,8 +63,27 @@ The issue slug is provided in the incoming prompt as the first argument (e.g. `T
 5. Read complete issue including all attached artifacts: `issueboss://issues/{slug}` and `list_artifacts` (re-read after transition to capture any state changes and full artifact list)
 6. Investigate scope: read relevant source files, look for related issues. If the issue describes a bug or unexpected behavior, invoke the `superpowers-extended-cc:systematic-debugging` skill (if available) to guide the investigation.
 7. Identify open questions, size (XS/S/M/L), risk (low/medium/high), and phases needed
-8. Write triage doc using the Write tool directly — do NOT run mkdir
+8. Write triage doc using the Write tool directly — do NOT run mkdir.
    Path: `{insights_dir}/issues/{slug}-triage-{kebab-summary}.md`
+
+   The file MUST begin with this YAML front-matter block (before any prose):
+
+   <!-- prettier-ignore -->
+   ```yaml
+   ---
+   type: triage
+   issue: {slug}
+   status: complete
+   created: {YYYY-MM-DD}
+   size: {XS|S|M|L|XL}
+   risk: {low|medium|high}
+   summary: >
+     {one paragraph summary of the issue and recommended phases}
+   ---
+   ```
+
+   See `.insights/shared/schema.md` for field definitions.
+
 9. `add_artifact` kind=`TriageResult` with `path` pointing to the triage doc
 10. `transition_issue` → `TriageReview` — do this immediately, do NOT wait for user instruction
 11. Return the summary below
