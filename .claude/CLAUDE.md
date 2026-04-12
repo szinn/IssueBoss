@@ -87,7 +87,7 @@ step, run the end-of-task routine below.
 These **MUST** be run as separate Bash commands. Do **NOT** join them into a single one with `&&`.
 
 1. `just fmt` — format code
-2. `just clippy` — lint (run separately from fmt, not chained)
+2. `just lint` — lint (run separately from fmt, not chained)
 3. `just component-tests` — verify tests pass
 4. `jj desc -m "type(scope): description\n\nbody"` — update working copy description
 
@@ -124,9 +124,10 @@ managed by the `insights` CLI.
 skill to orchestrate both and save a research document.
 
 Directory layout:
-- `.insights/issues/` — triage documents (IB-XX-triage-*.md)
-- `.insights/shared/specs/` — specs (IB-XX-spec-*.md)
-- `.insights/shared/plans/` — plans (IB-XX-plan-*.md)
+
+- `.insights/issues/` — triage documents (IB-XX-triage-\*.md)
+- `.insights/shared/specs/` — specs (IB-XX-spec-\*.md)
+- `.insights/shared/plans/` — plans (IB-XX-plan-\*.md)
 - `.insights/shared/research/` — research documents
 - `.insights/scotte/` — personal notes
 - `.insights/searchable/` — hardlink mirror for grep/search (read-only; strip "searchable/"

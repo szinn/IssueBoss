@@ -53,9 +53,17 @@ run-bundle:
 release VERSION:
     ./scripts/release.sh {{ VERSION }}
 
+[doc('Run lint checks')]
+lint:
+    just clippy
+    just buf
 [doc('Run Clippy on codebase for linting')]
 clippy:
     cargo +nightly clippy --workspace --all-targets --all-features --target-dir target/clippy
+
+[doc('Run proto lint')]
+buf:
+    buf lint crates/ib-api/proto
 
 [doc('Update rust crate dependencies')]
 deps:
