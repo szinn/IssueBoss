@@ -33,18 +33,18 @@ FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef AS builder-web
-COPY --from=planner /app/recipe.json recipe.json
-
-# Build deps layer (cached)
-RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
-
-COPY . .
-
-RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
-
-# Build web client
-RUN /usr/local/cargo/bin/dx bundle --web --package issueboss --release
+# FROM chef AS builder-web
+# COPY --from=planner /app/recipe.json recipe.json
+#
+# # Build deps layer (cached)
+# RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+#
+# COPY . .
+#
+# RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
+#
+# # Build web client
+# RUN /usr/local/cargo/bin/dx bundle --web --package issueboss --release
 
 FROM chef AS builder-server
 COPY --from=planner /app/recipe.json recipe.json
@@ -54,13 +54,13 @@ RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path r
 
 COPY . .
 
-RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
-
 # Build actual binary
-RUN /usr/local/cargo/bin/dx bundle --server --package issueboss --release --target x86_64-unknown-linux-musl
+# RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
+# RUN /usr/local/cargo/bin/dx bundle --server --package issueboss --release --target x86_64-unknown-linux-musl
+cargo build --features --bin issueboss --release
 
 # Sanity check: should say "not a dynamic executable"
-RUN ldd target/dx/issueboss/release/web/issueboss || true
+RUN ldd target/release/issueboss || true
 
 FROM ubuntu:latest@sha256:84e77dee7d1bc93fb029a45e3c6cb9d8aa4831ccfcc7103d36e876938d28895b AS certs
 RUN groupadd --gid 1234 issueboss && useradd -g 1234 -M -u 1234 -s /usr/sbin/nologin issueboss
@@ -72,9 +72,7 @@ FROM scratch
 COPY --from=certs /etc/passwd /etc/passwd
 COPY --from=certs /etc/group /etc/group
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder-web /app/target/dx/issueboss/release/web/public /app/public
-COPY --from=builder-web /app/target/dx/issueboss/release/web/.manifest.json /app
-COPY --from=builder-server /app/target/dx/issueboss/release/web/issueboss /app
+COPY --from=builder-server /app/target/release/issueboss /app
 
 # LABEL tech.zinn.image.target_platform=$TARGETPLATFORM
 # LABEL tech.zinn.image.target_architecture=$TARGETARCH
