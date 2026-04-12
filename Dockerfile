@@ -74,6 +74,8 @@ COPY --from=certs /etc/group /etc/group
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder-server /app/target/release/issueboss /app/issueboss
 
+RUN ls -l /app
+
 # LABEL tech.zinn.image.target_platform=$TARGETPLATFORM
 # LABEL tech.zinn.image.target_architecture=$TARGETARCH
 # LABEL tech.zinn.image.target_os=$TARGETOS
