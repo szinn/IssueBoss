@@ -5,12 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-axum.workspace = true
-tokio.workspace = true
-tokio-graceful-shutdown.workspace = true
+ib-core.workspace = true
+
 anyhow.workspace = true
+axum.workspace = true
+tokio-graceful-shutdown.workspace = true
+tokio.workspace = true
 tracing.workspace = true
-dioxus.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true }

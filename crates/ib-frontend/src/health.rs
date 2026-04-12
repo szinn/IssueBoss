@@ -9,7 +9,7 @@ async fn readiness() -> &'static str {
 }
 
 pub fn health_router() -> Router {
-    Router::new().route("/health/live", get(liveness)).route("/health/ready", get(readiness))
+    Router::new().route("/healthz", get(liveness)).route("/readyz", get(readiness))
 }
 
 #[cfg(test)]
@@ -25,7 +25,7 @@ mod tests {
     #[tokio::test]
     async fn health_live_returns_ok() {
         let app = health_router();
-        let request = Request::builder().uri("/health/live").body(Body::empty()).unwrap();
+        let request = Request::builder().uri("/healthz").body(Body::empty()).unwrap();
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -36,7 +36,7 @@ mod tests {
     #[tokio::test]
     async fn health_ready_returns_ok() {
         let app = health_router();
-        let request = Request::builder().uri("/health/ready").body(Body::empty()).unwrap();
+        let request = Request::builder().uri("/readyz").body(Body::empty()).unwrap();
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();

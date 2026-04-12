@@ -1,12 +1,16 @@
 pub mod app;
 mod health;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use app::stay_tuned_html;
 use axum::{Router, response::Html, routing::get};
-use tokio_graceful_shutdown::SubsystemHandle;
-use tracing::info;
+use ib_core::CoreServices;
+use tokio_graceful_shutdown::{IntoSubsystem, SubsystemHandle};
+
+pub struct FrontendSubsystem {
+    port: u16,
+}
 
 pub fn create_frontend_router() -> Router {
     Router::new()
@@ -14,14 +18,32 @@ pub fn create_frontend_router() -> Router {
         .merge(health::health_router())
 }
 
-pub async fn create_frontend_subsystem(port: u16, subsys: SubsystemHandle) -> anyhow::Result<()> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("HTTP server listening on {addr}");
-    axum::serve(listener, create_frontend_router())
-        .with_graceful_shutdown(async move { subsys.on_shutdown_requested().await })
-        .await?;
-    Ok(())
+pub fn create_frontend_subsystem(port: u16, _core_services: Arc<CoreServices>) -> FrontendSubsystem {
+    FrontendSubsystem { port }
+}
+
+impl IntoSubsystem<anyhow::Error> for FrontendSubsystem {
+    async fn run(self, subsys: &mut SubsystemHandle) -> Result<(), anyhow::Error> {
+        tracing::info!("FrontendSubsystem starting...");
+
+        let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        tracing::info!("FrontendSubsystem started");
+        tracing::info!("Listening on {addr}");
+
+        tokio::select! {
+            () = subsys.on_shutdown_requested() => {
+                tracing::info!("Frontend shutting down...");
+            }
+            result = axum::serve(listener, create_frontend_router()) => {
+                if let Err(e) = result {
+                    tracing::error!("Frontend server error: {}", e);
+                }
+                subsys.request_shutdown();
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
