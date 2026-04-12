@@ -5,7 +5,12 @@ description: Use when the user mentions issues, asks what to work on, references
 
 ## Config
 
-Read `.claude/issueboss.json` from project root. Required: `project_slug` (default for all MCP calls). Optional: `server` (informational), `insights_dir` (doc root). If missing, stop and ask user to create it.
+**MANDATORY FIRST STEP — do this before any MCP call.** Read `.claude/issueboss.json` from the project root using the Read tool. MCP calls made without this will fail with misleading "project not found" errors because the wrong `project_slug` will be used.
+
+Required field: `project_slug` — use this as the default for every MCP call that takes a project slug.
+Optional fields: `server` (informational), `insights_dir` (doc root).
+
+If the file is missing, stop and ask the user to create it.
 
 ## Tools
 
