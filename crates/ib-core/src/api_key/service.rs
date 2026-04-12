@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use chrono::{TimeDelta, Utc};
+
 use crate::{
     Error, RepositoryError,
     api_key::model::{ApiKey, ApiKeyId, NewApiKey, generate_api_key},
@@ -7,6 +9,10 @@ use crate::{
     user::UserId,
     with_read_only_transaction, with_transaction,
 };
+
+/// Only write `last_used_at` if it is `None` or older than this threshold.
+/// This avoids a DB write on every request within a single MCP session.
+const LAST_USED_THRESHOLD: TimeDelta = TimeDelta::hours(24);
 
 #[async_trait::async_trait]
 pub trait ApiKeyService: Send + Sync {
@@ -28,9 +34,10 @@ pub trait ApiKeyService: Send + Sync {
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<ApiKey>, Error>;
 
     /// Record that a key was just used (updates last_used_at).
-    /// Fire-and-forget in auth middleware — failure should not block the
-    /// request.
-    async fn record_usage(&self, id: ApiKeyId) -> Result<(), Error>;
+    /// Skips the write if `last_used_at` is already within
+    /// [`LAST_USED_THRESHOLD`]. Fire-and-forget in auth middleware —
+    /// failure should not block the request.
+    async fn record_usage(&self, api_key: ApiKey) -> Result<(), Error>;
 }
 
 pub(crate) struct ApiKeyServiceImpl {
@@ -77,7 +84,15 @@ impl ApiKeyService for ApiKeyServiceImpl {
         with_read_only_transaction!(self, api_key_repository, |tx| api_key_repository.list_for_user(tx, user_id).await)
     }
 
-    async fn record_usage(&self, id: ApiKeyId) -> Result<(), Error> {
+    async fn record_usage(&self, api_key: ApiKey) -> Result<(), Error> {
+        let needs_update = match api_key.last_used_at {
+            None => true,
+            Some(last_used) => Utc::now() - last_used > LAST_USED_THRESHOLD,
+        };
+        if !needs_update {
+            return Ok(());
+        }
+        let id = api_key.id;
         with_transaction!(self, api_key_repository, |tx| api_key_repository.update_last_used(tx, id).await)
     }
 }
@@ -203,9 +218,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_usage_delegates_to_repository() {
+    async fn record_usage_writes_when_last_used_is_none() {
+        let key = fake_key(1, 10, "ib_live"); // last_used_at: None
         let mut repo = MockApiKeyRepository::new();
-        repo.expect_update_last_used().returning(|_, _| Box::pin(async { Ok(()) }));
-        assert!(make_svc(repo).record_usage(1).await.is_ok());
+        repo.expect_update_last_used().once().returning(|_, _| Box::pin(async { Ok(()) }));
+        assert!(make_svc(repo).record_usage(key).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn record_usage_skips_write_when_recently_used() {
+        let mut key = fake_key(1, 10, "ib_live");
+        key.last_used_at = Some(Utc::now() - chrono::TimeDelta::minutes(1));
+        let repo = MockApiKeyRepository::new();
+        // expect_update_last_used NOT called — mock will panic if it is
+        let result = make_svc(repo).record_usage(key).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn record_usage_writes_when_last_used_is_stale() {
+        let mut key = fake_key(1, 10, "ib_live");
+        key.last_used_at = Some(Utc::now() - chrono::TimeDelta::hours(25));
+        let mut repo = MockApiKeyRepository::new();
+        repo.expect_update_last_used().once().returning(|_, _| Box::pin(async { Ok(()) }));
+        assert!(make_svc(repo).record_usage(key).await.is_ok());
     }
 }

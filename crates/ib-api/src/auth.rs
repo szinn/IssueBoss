@@ -50,9 +50,9 @@ pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>,
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let svc = core_services.clone();
-    let key_id = api_key.id;
+    let api_key_snapshot = api_key.clone();
     tokio::spawn(async move {
-        let _ = svc.api_key_service().record_usage(key_id).await;
+        let _ = svc.api_key_service().record_usage(api_key_snapshot).await;
     });
 
     CURRENT_MCP_USER
@@ -90,9 +90,9 @@ pub async fn authenticate_grpc(core_services: &Arc<CoreServices>, metadata: &ton
         .ok_or_else(|| Status::unauthenticated("Invalid API key"))?;
 
     let svc = core_services.clone();
-    let key_id = api_key.id;
+    let api_key_snapshot = api_key.clone();
     tokio::spawn(async move {
-        let _ = svc.api_key_service().record_usage(key_id).await;
+        let _ = svc.api_key_service().record_usage(api_key_snapshot).await;
     });
 
     Ok(user)
