@@ -57,7 +57,7 @@ COPY . .
 # Build actual binary
 # RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
 # RUN /usr/local/cargo/bin/dx bundle --server --package issueboss --release --target x86_64-unknown-linux-musl
-cargo build --features --bin issueboss --release
+RUN cargo build --features --bin issueboss --release
 
 # Sanity check: should say "not a dynamic executable"
 RUN ldd target/release/issueboss || true
