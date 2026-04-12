@@ -7,8 +7,7 @@
     "helpers:pinGitHubActionDigests",
     ":automergeDigest",
     ":enablePreCommit",
-    ":semanticCommits",
-    ":automergeBranch"
+    ":semanticCommits"
   ],
   timezone: "America/Toronto",
   dependencyDashboardTitle: "Renovate Dashboard",
@@ -19,19 +18,14 @@
     {
       matchManagers: ["github-actions"],
       matchUpdateTypes: ["minor", "patch", "digest"],
-      addLabels: ["ci"]
+      addLabels: ["ci"],
+      automerge: false
     },
     {
       matchManagers: ["github-actions"],
       addLabels: ["ci"],
-      semanticCommitScope: "deps"
-    },
-    {
-      matchManagers: ["cargo"],
-      addLabels: ["dependency"],
-      commitMessageTopic: "Crate {{depName}}",
       semanticCommitScope: "deps",
-      rangeStrategy: "bump"
+      automerge: false
     },
     {
       matchDatasources: ["docker"],
@@ -39,6 +33,13 @@
       commitMessageTopic: "Docker image {{depName}}",
       semanticCommitScope: "deps",
       automerge: false
+    },
+    {
+      matchManagers: ["cargo"],
+      addLabels: ["dependency"],
+      commitMessageTopic: "Crate {{depName}}",
+      semanticCommitScope: "deps",
+      rangeStrategy: "bump"
     },
     {
       matchUpdateTypes: ["major"],
