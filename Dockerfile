@@ -58,7 +58,8 @@ COPY . .
 # RUN tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
 # RUN /usr/local/cargo/bin/dx bundle --server --package issueboss --release --target x86_64-unknown-linux-musl
 RUN cargo build --features server --bin issueboss --release --target x86_64-unknown-linux-musl
-RUN ls -lR target
+RUN musl-strip target/x86_64-unknown-linux-musl/release/issueboss
+RUN ls -lR target/x86_64-unknown-linux-musl
 
 # Sanity check: should say "not a dynamic executable"
 RUN ldd target/release/issueboss || true
@@ -73,7 +74,7 @@ FROM scratch
 COPY --from=certs /etc/passwd /etc/passwd
 COPY --from=certs /etc/group /etc/group
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder-server /app/target/release/issueboss /app/issueboss
+COPY --from=builder-server /app/target/x86_64-unknown-linux-musl/release/issueboss /app/issueboss
 
 # LABEL tech.zinn.image.target_platform=$TARGETPLATFORM
 # LABEL tech.zinn.image.target_architecture=$TARGETARCH
