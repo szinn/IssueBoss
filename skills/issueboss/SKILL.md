@@ -146,6 +146,16 @@ The "immediately transition to Review" rule is an invariant, not a step in a lin
 
 ### Research phase
 
+Delegate to the `issueboss:research` agent via the Agent tool.
+
+> **Permission requirement:** The research agent writes files to `.insights/`. Before dispatching, ensure the current session has file write permissions enabled — otherwise the agent will fail when it attempts to write research documents.
+
+- **Single issue:** Dispatch one background agent — `subagent_type: issueboss:research`, `run_in_background: true`, prompt containing "Research issue {slug}." followed by any context the user provided. When it completes, display the returned summary and ask the user which phase to advance to.
+- **Multiple issues:** Dispatch one background agent per issue in a single message (all Agent tool calls in the same response), each with prompt "Research issue {slug}." followed by any relevant context. Display summaries grouped by issue when all complete; ask the user which phase to advance to for each.
+- **Foreground override:** If the user explicitly asks to wait (e.g., "wait for it", "don't background it", "research IB-42 synchronously"), omit `run_in_background`.
+- **Agent errors:** If the agent returns an error (e.g., `Error (Step 2): Issue {slug} is in {status}, not ResearchNeeded`), display it to the user as-is and do not attempt retry.
+- **Ad-hoc research:** For free-form research queries not tied to an issue pipeline step, invoke the `research` skill directly — no IssueBoss MCP interaction is needed.
+
 When covering ResearchTopics with Research artifacts:
 
 1. Call list_artifacts (kinds=["ResearchTopic"]) to get each topic's `token` field
