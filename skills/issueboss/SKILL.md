@@ -110,3 +110,5 @@ Show issue fields (slug, title, status, priority, size, description, submitter f
 ### Listing issues
 
 Show slug, status, priority, title. Lead with actionable states (TriageNeeded, in-progress) before blocked/low-priority. **Do not include Backlog or Canceled issues** unless the user explicitly asks for them.
+
+**Open issues** are those in any pipeline state except Done, Backlog, and Canceled. Backlog and Canceled are neither open nor done — Backlog is deprioritized, Canceled is abandoned. Never describe them as open or resolved when summarizing project status.
