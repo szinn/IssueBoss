@@ -24,6 +24,8 @@ impl MigrationTrait for Migration {
                     .col(string(Issues::Priority).not_null())
                     .col(string(Issues::Size).null())
                     .col(string(Issues::Slug).not_null().unique_key())
+                    .col(big_integer(Issues::SubmitterId).not_null())
+                    .col(big_integer(Issues::AssignedId).null())
                     .col(big_integer(Issues::Version).not_null().default(0))
                     .col(timestamp_with_time_zone(Issues::CreatedAt))
                     .col(timestamp_with_time_zone(Issues::UpdatedAt))
@@ -64,6 +66,8 @@ enum Issues {
     Priority,
     Size,
     Slug,
+    SubmitterId,
+    AssignedId,
     Version,
     CreatedAt,
     UpdatedAt,
