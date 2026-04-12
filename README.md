@@ -60,6 +60,43 @@ Phases are a DAG — after any Review state you can jump directly to any later p
 | PlanInProgress → PlanReview         | Plan                       |
 | ResearchInProgress → ResearchReview | all ResearchTopics covered |
 
+## Configuration
+
+IssueBoss is configured via environment variables. Server variables use the `ISSUEBOSS__` prefix (double underscore separator); CLI variables use a single underscore.
+
+**Server**
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `ISSUEBOSS__DATABASE_URL` | *(required)* | Database connection URL (e.g. `postgres://user:pass@localhost/issueboss`) |
+| `ISSUEBOSS__HTTP_PORT` | `8080` | HTTP/web port |
+| `ISSUEBOSS__MCP_PORT` | `8090` | MCP server port |
+| `ISSUEBOSS__GRPC_PORT` | `9090` | gRPC admin interface port |
+
+**CLI**
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `ISSUEBOSS_GRPC_HOST` | `http://localhost` | gRPC server host (include scheme) |
+| `ISSUEBOSS_GRPC_PORT` | `9090` | gRPC server port |
+| `ISSUEBOSS_API_KEY` | *(none)* | API key sent as `x-api-key` on all admin gRPC requests |
+
+## Bootstrap
+
+After starting the server, create the initial super-admin account via the gRPC admin interface:
+
+```sh
+issueboss super-admin \
+  --username admin \
+  --full-name "Your Name" \
+  --email admin@example.com \
+  --password changeme
+```
+
+Use `--host` and `--port` (or `ISSUEBOSS_GRPC_HOST` / `ISSUEBOSS_GRPC_PORT`) if the server is not running on `http://localhost:9090`.
+
+The command prints the generated API key — store it securely, it will not be shown again. Set it as `ISSUEBOSS_API_KEY` to authenticate subsequent CLI commands.
+
 ## Tech Stack
 
 - **Rust** — hexagonal (ports & adapters) architecture, dependencies point inward toward `ib-core`
