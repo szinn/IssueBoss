@@ -63,7 +63,7 @@ clippy:
 
 [doc('Run proto lint')]
 buf:
-    buf lint crates/ib-api/proto
+    buf lint crates/ib-api
 
 [doc('Update rust crate dependencies')]
 deps:

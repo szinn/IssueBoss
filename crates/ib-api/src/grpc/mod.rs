@@ -10,7 +10,7 @@ pub mod admin;
 mod error;
 
 pub mod admin_proto {
-    tonic::include_proto!("issueboss.admin");
+    tonic::include_proto!("issueboss.admin.v1");
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("system_descriptor");
 }
 
