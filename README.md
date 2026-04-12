@@ -53,11 +53,11 @@ Phases are a DAG — after any Review state you can jump directly to any later p
 
 **Gated transitions** require artifacts to exist before they pass:
 
-| Transition | Required artifact |
-|------------|------------------|
-| TriageInProgress → TriageReview | TriageResult |
-| SpecInProgress → SpecReview | Spec |
-| PlanInProgress → PlanReview | Plan |
+| Transition                          | Required artifact          |
+| ----------------------------------- | -------------------------- |
+| TriageInProgress → TriageReview     | TriageResult               |
+| SpecInProgress → SpecReview         | Spec                       |
+| PlanInProgress → PlanReview         | Plan                       |
 | ResearchInProgress → ResearchReview | all ResearchTopics covered |
 
 ## Tech Stack

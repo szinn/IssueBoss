@@ -3,6 +3,7 @@ pub mod commit;
 pub mod git;
 pub mod gitignore;
 pub mod init;
+pub mod schema_md;
 pub mod searchable;
 pub mod status;
 pub mod symlinks;

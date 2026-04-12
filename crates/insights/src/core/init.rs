@@ -5,7 +5,12 @@ use anyhow::{Context, Result};
 use crate::{
     config::Config,
     core::{
-        claude_md::ensure_claude_md_insights_section, git::run_git, gitignore::ensure_gitignore_entry, searchable::rebuild_searchable, symlinks::ensure_symlink,
+        claude_md::{ensure_claude_md_frontmatter_hint, ensure_claude_md_insights_section},
+        git::run_git,
+        gitignore::ensure_gitignore_entry,
+        schema_md::ensure_schema_md,
+        searchable::rebuild_searchable,
+        symlinks::ensure_symlink,
     },
 };
 
@@ -52,7 +57,10 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     // 6. Build searchable tree
     rebuild_searchable(&insights_dir, verbose)?;
 
-    // 7. Write config
+    // 7. Write schema.md to shared dir (idempotent)
+    ensure_schema_md(&repo.join("shared"), verbose)?;
+
+    // 8. Write config
     // Config::write() uses CWD-relative path (.insights/config.toml)
     let config = Config {
         repo: repo.clone(),
@@ -64,8 +72,11 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     let result = config.write();
     std::env::set_current_dir(original).context("Failed to restore working directory")?;
 
-    // 8. Write CLAUDE.md insights section (idempotent)
+    // 9. Write CLAUDE.md insights section (idempotent)
     ensure_claude_md_insights_section(&opts.project_root, &opts.user)?;
+
+    // 10. Add front-matter hint to CLAUDE.md (idempotent)
+    ensure_claude_md_frontmatter_hint(&opts.project_root)?;
 
     result
 }
@@ -174,6 +185,46 @@ mod tests {
         let content = std::fs::read_to_string(&claude_md).unwrap();
         assert!(content.contains("## Insights"), "CLAUDE.md missing ## Insights section");
         assert!(content.contains(".insights/alice/"), "CLAUDE.md missing user-specific path");
+    }
+
+    #[test]
+    fn full_init_writes_schema_md() {
+        let project_dir = tempfile::tempdir().unwrap();
+        let (repo_dir, _bare) = setup_repo();
+
+        init(
+            InitOptions {
+                repo: repo_dir.path().to_owned(),
+                user: "alice".into(),
+                project: "MyProject".into(),
+                project_root: project_dir.path().to_owned(),
+            },
+            false,
+        )
+        .unwrap();
+
+        assert!(repo_dir.path().join("shared/schema.md").exists(), "schema.md not written to shared dir");
+    }
+
+    #[test]
+    fn full_init_adds_frontmatter_hint_to_claude_md() {
+        let project_dir = tempfile::tempdir().unwrap();
+        let (repo_dir, _bare) = setup_repo();
+
+        init(
+            InitOptions {
+                repo: repo_dir.path().to_owned(),
+                user: "alice".into(),
+                project: "MyProject".into(),
+                project_root: project_dir.path().to_owned(),
+            },
+            false,
+        )
+        .unwrap();
+
+        let claude_md = project_dir.path().join("CLAUDE.md");
+        let content = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(content.contains("schema.md"), "CLAUDE.md missing front-matter hint");
     }
 
     #[test]

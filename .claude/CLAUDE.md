@@ -132,3 +132,5 @@ Directory layout:
 - `.insights/scotte/` — personal notes
 - `.insights/searchable/` — hardlink mirror for grep/search (read-only; strip "searchable/"
   from any path before reporting or editing)
+All `.insights/` artifact files must include YAML front-matter.
+See `.insights/shared/schema.md` for the full schema and vocabulary.

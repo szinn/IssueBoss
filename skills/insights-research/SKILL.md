@@ -31,4 +31,3 @@ This skill applies when:
 4. **Dispatch `insights-analyzer`** via the Agent tool — prompt includes the 5 file paths and total found count. Wait for result.
 
 5. **Return findings** — present the synthesized findings inline to the user or calling skill.
-
