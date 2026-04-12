@@ -29,5 +29,7 @@ pub fn cmd_init(args: InitArgs, verbose: bool) -> anyhow::Result<()> {
             project_root,
         },
         verbose,
-    )
+    )?;
+    println!("Initialized.");
+    Ok(())
 }

@@ -33,6 +33,7 @@ pub fn commit(config: &Config, verbose: bool) -> Result<()> {
     // 5. Push
     run_git(repo, &["push"], verbose)?;
 
+    println!("Committed and pushed.");
     Ok(())
 }
 
