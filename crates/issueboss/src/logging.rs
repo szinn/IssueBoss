@@ -29,6 +29,7 @@ pub(crate) fn init_logging() -> Result<()> {
         .add_directive("sqlx::postgres::notice=off".parse()?)
         .add_directive("sqlx::query=off".parse()?)
         .add_directive("tokio_util=off".parse()?)
+        .add_directive("tonic::transport=off".parse()?)
         .add_directive("tower_http=off".parse()?)
         .add_directive("warnings::warnings=off".parse()?);
 

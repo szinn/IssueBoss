@@ -623,7 +623,7 @@ impl IssueBossServer {
         let updated = self
             .core
             .issue_service()
-            .transition_issue(issue.token, new_status, p.reason, self.user.id)
+            .transition_issue(issue.token, new_status, p.reason, Some(self.user.id))
             .await
             .map_err(map_core_err)?;
 

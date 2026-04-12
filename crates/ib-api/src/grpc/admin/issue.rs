@@ -75,7 +75,7 @@ pub(crate) mod handler {
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?
             .slug;
-        let updated = core.issue_service().transition_issue(issue.token, new_status, None, triggered_by).await?;
+        let updated = core.issue_service().transition_issue(issue.token, new_status, None, Some(triggered_by)).await?;
         issue_to_proto(core, updated, &project_slug).await
     }
 
