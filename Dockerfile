@@ -72,7 +72,7 @@ FROM scratch
 COPY --from=certs /etc/passwd /etc/passwd
 COPY --from=certs /etc/group /etc/group
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder-server /app/target/release/issueboss /app
+COPY --from=builder-server /app/target/release/issueboss /app/issueboss
 
 # LABEL tech.zinn.image.target_platform=$TARGETPLATFORM
 # LABEL tech.zinn.image.target_architecture=$TARGETARCH
@@ -82,6 +82,5 @@ LABEL org.opencontainers.image.source="https://github.com/szinn/IssueBoss"
 LABEL org.opencontainers.image.description="Take Control Of Your Project Issues"
 
 WORKDIR /app
-VOLUME [ /library ]
 USER issueboss
 ENTRYPOINT [ "/app/issueboss", "server" ]
