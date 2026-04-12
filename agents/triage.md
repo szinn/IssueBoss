@@ -30,6 +30,9 @@ If the file or either field is missing, halt immediately and return:
 transition_issue — advance pipeline status
 add_artifact — attach artifact to issue
 list_artifacts — list existing artifacts on an issue
+list_issues — retrieve all issues (used in Step 6b for related-issue discovery)
+list_relationships — check existing relationships on an issue
+add_relationship — register a RelatedTo relationship between issues
 Read, Write — file system access (built-in)
 
 Resources: issueboss://issues/{slug}
@@ -62,6 +65,45 @@ The issue slug is provided in the incoming prompt as the first argument (e.g. `T
 4. `transition_issue` → `TriageInProgress`
 5. Read complete issue including all attached artifacts: `issueboss://issues/{slug}` and `list_artifacts` (re-read after transition to capture any state changes and full artifact list)
 6. Investigate scope: read relevant source files, look for related issues. If the issue describes a bug or unexpected behavior, invoke the `superpowers-extended-cc:systematic-debugging` skill (if available) to guide the investigation.
+
+<!-- prettier-ignore-start -->
+6b. Identify and link related existing issues
+
+   a. **List all issues** — call `list_issues` with no status filter to retrieve
+      all issues (Done, Canceled, Backlog, and active). Collect slug + title for each.
+      Exclude the issue being triaged from consideration.
+
+   b. **Scan titles** — using the new issue's title, description, and scope findings
+      from Step 6, identify up to 5 candidate slugs whose titles suggest overlap
+      (same feature area, similar terminology, potential duplicate or predecessor).
+
+   c. **Read candidates** — read the full description of each candidate via
+      `issueboss://issues/{slug}`.
+
+   d. **Call `list_relationships`** for the new issue first — skip any relationship
+      that already exists to avoid duplicates if triage is re-run.
+
+   e. **Classify each candidate:**
+      - **High-confidence** (same feature, obvious predecessor/duplicate, directly
+        connected scope) → register `RelatedTo` via `add_relationship`
+        (`from_slug` = new issue slug, `to_slug` = candidate, `kind: "RelatedTo"`)
+      - **Maybe** (plausible overlap but uncertain) → note in triage doc; do not register
+      - **Not related** → discard silently
+
+   f. **Cap**: register at most 5 `RelatedTo` relationships. If more high-confidence
+      candidates exist beyond the cap, treat overflow as "maybe" and note in triage doc.
+
+   **Decision rules:**
+   | Scenario | Classification |
+   |---|---|
+   | Same feature reported before (any status) | High-confidence |
+   | Previously Canceled as "not reproducible", same symptoms | High-confidence |
+   | Issue that fixed something this issue may depend on | High-confidence |
+   | Same general area but different scope | Maybe |
+   | Overlapping terminology but different problem | Maybe |
+   | Mentions same component but unrelated problem | Discard |
+<!-- prettier-ignore-end -->
+
 7. Identify open questions, size (XS/S/M/L), risk (low/medium/high), and phases needed
 8. Write triage doc using the Write tool directly — do NOT run mkdir.
    Path: `{insights_dir}/issues/{slug}-triage-{kebab-summary}.md`
@@ -84,6 +126,18 @@ The issue slug is provided in the incoming prompt as the first argument (e.g. `T
 
    See `.insights/shared/schema.md` for field definitions.
 
+   If any related issues were found in Step 6b, append a **Related Issues** section
+   at the end of the triage doc (omit entirely if nothing was found):
+
+   <!-- prettier-ignore -->
+   ```markdown
+   ## Related Issues
+
+   - IB-X (RelatedTo, registered): <one sentence explaining the connection>
+   - IB-Y (RelatedTo, registered): <one sentence explaining the connection>
+   - IB-Z (maybe — not registered): <one sentence explaining why uncertain>
+   ```
+
 9. `add_artifact` kind=`TriageResult` with `path` pointing to the triage doc
 10. `transition_issue` → `TriageReview` — do this immediately, do NOT wait for user instruction
 11. Return the summary below
@@ -98,4 +152,7 @@ Outcome: <one sentence — what the issue is, what phases are needed>
 Size: XS/S/M/L  Risk: low/medium/high
 Open questions:
 - <question, or "none">
+Related: IB-X, IB-Y (registered); IB-Z (maybe)
 ```
+
+(Omit the `Related:` line entirely if no related issues were found.)
