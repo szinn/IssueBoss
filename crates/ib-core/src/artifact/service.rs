@@ -61,17 +61,7 @@ impl ArtifactService for ArtifactServiceImpl {
                 .find_by_slug(tx, issue_id, &slug)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            if artifact.kind == ArtifactKind::StatusTransition {
-                return Err(Error::Validation("StatusTransition artifacts are immutable".into()));
-            }
-            if is_file_backed(&artifact.kind) {
-                let old_path = artifact.body.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                let new_path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if !old_path.is_empty() && old_path != new_path {
-                    return Err(Error::Validation("file path is immutable after creation".into()));
-                }
-            }
-            validate_body(&artifact.kind, &body)?;
+            validate_artifact_update(&artifact, &body)?;
             artifact.body = body;
             artifact_repository.update(tx, artifact).await
         })
@@ -84,17 +74,7 @@ impl ArtifactService for ArtifactServiceImpl {
                 .await?
                 .filter(|a| a.issue_id == issue_id)
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            if artifact.kind == ArtifactKind::StatusTransition {
-                return Err(Error::Validation("StatusTransition artifacts are immutable".into()));
-            }
-            if is_file_backed(&artifact.kind) {
-                let old_path = artifact.body.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                let new_path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if !old_path.is_empty() && old_path != new_path {
-                    return Err(Error::Validation("file path is immutable after creation".into()));
-                }
-            }
-            validate_body(&artifact.kind, &body)?;
+            validate_artifact_update(&artifact, &body)?;
             artifact.body = body;
             artifact_repository.update(tx, artifact).await
         })
@@ -171,6 +151,20 @@ impl ArtifactService for ArtifactServiceImpl {
             Ok(results)
         })
     }
+}
+
+fn validate_artifact_update(artifact: &IssueArtifact, body: &Value) -> Result<(), Error> {
+    if artifact.kind == ArtifactKind::StatusTransition {
+        return Err(Error::Validation("StatusTransition artifacts are immutable".into()));
+    }
+    if is_file_backed(&artifact.kind) {
+        let old_path = artifact.body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        let new_path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        if !old_path.is_empty() && old_path != new_path {
+            return Err(Error::Validation("file path is immutable after creation".into()));
+        }
+    }
+    validate_body(&artifact.kind, body)
 }
 
 fn is_file_backed(kind: &ArtifactKind) -> bool {
@@ -507,5 +501,156 @@ mod tests {
     #[test]
     fn handoff_is_file_backed() {
         assert!(is_file_backed(&ArtifactKind::Handoff));
+    }
+
+    // validate_body edge cases
+
+    #[test]
+    fn validate_body_comment_requires_text() {
+        let result = validate_body(&ArtifactKind::Comment, &json!({"note": "oops"}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_comment_with_text_is_ok() {
+        assert!(validate_body(&ArtifactKind::Comment, &json!({"text": "hello"})).is_ok());
+    }
+
+    #[test]
+    fn validate_body_research_missing_topic_token() {
+        let result = validate_body(&ArtifactKind::Research, &json!({"status": "completed", "path": "foo.md"}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_research_invalid_status() {
+        let result = validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "pending"}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_research_completed_requires_path() {
+        let result = validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "completed"}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_research_cancelled_no_path_required() {
+        assert!(validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "cancelled"})).is_ok());
+    }
+
+    #[test]
+    fn validate_body_research_topic_both_desc_and_path_rejected() {
+        let result = validate_body(&ArtifactKind::ResearchTopic, &json!({"description": "desc", "path": "foo.md"}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_research_topic_neither_desc_nor_path_rejected() {
+        let result = validate_body(&ArtifactKind::ResearchTopic, &json!({}));
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_research_topic_desc_only_ok() {
+        assert!(validate_body(&ArtifactKind::ResearchTopic, &json!({"description": "what is auth?"})).is_ok());
+    }
+
+    #[test]
+    fn validate_body_status_transition_always_ok() {
+        // StatusTransition has no body validation
+        assert!(validate_body(&ArtifactKind::StatusTransition, &json!({})).is_ok());
+    }
+
+    // update_artifact guards
+
+    #[tokio::test]
+    async fn update_artifact_rejects_status_transition_kind() {
+        let mut repo = MockArtifactRepository::new();
+        let artifact = fake_artifact(5, 10, ArtifactKind::StatusTransition, json!({"from": "A", "to": "B"}));
+        let a = artifact.clone();
+        repo.expect_find_by_slug().returning(move |_, _, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.update_artifact(10, "some-slug", json!({"from": "A", "to": "C"})).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn update_artifact_rejects_file_path_change() {
+        let mut repo = MockArtifactRepository::new();
+        let artifact = fake_artifact(6, 10, ArtifactKind::Spec, json!({"path": ".insights/spec.md"}));
+        let a = artifact.clone();
+        repo.expect_find_by_slug().returning(move |_, _, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.update_artifact(10, "spec", json!({"path": ".insights/spec-v2.md"})).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    // update_artifact_by_id issue_id mismatch and guards
+
+    #[tokio::test]
+    async fn update_artifact_by_id_issue_id_mismatch_returns_not_found() {
+        let mut repo = MockArtifactRepository::new();
+        // artifact belongs to issue 99, but we pass issue_id=10
+        let artifact = fake_artifact(7, 99, ArtifactKind::Comment, json!({"text": "hi"}));
+        let a = artifact.clone();
+        repo.expect_find_by_id().returning(move |_, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.update_artifact_by_id(10, 7, json!({"text": "updated"})).await;
+        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
+    }
+
+    #[tokio::test]
+    async fn update_artifact_by_id_rejects_status_transition_kind() {
+        let mut repo = MockArtifactRepository::new();
+        let artifact = fake_artifact(8, 10, ArtifactKind::StatusTransition, json!({"from": "A", "to": "B"}));
+        let a = artifact.clone();
+        repo.expect_find_by_id().returning(move |_, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.update_artifact_by_id(10, 8, json!({"from": "A", "to": "C"})).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn update_artifact_by_id_rejects_file_path_change() {
+        let mut repo = MockArtifactRepository::new();
+        let artifact = fake_artifact(9, 10, ArtifactKind::Plan, json!({"path": ".insights/plan.md"}));
+        let a = artifact.clone();
+        repo.expect_find_by_id().returning(move |_, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.update_artifact_by_id(10, 9, json!({"path": ".insights/plan-v2.md"})).await;
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    // remove_artifact_by_id issue_id mismatch
+
+    #[tokio::test]
+    async fn remove_artifact_by_id_issue_id_mismatch_returns_not_found() {
+        let mut repo = MockArtifactRepository::new();
+        // artifact belongs to issue 99, but we pass issue_id=10
+        let artifact = fake_artifact(11, 99, ArtifactKind::Comment, json!({"text": "hi"}));
+        let a = artifact.clone();
+        repo.expect_find_by_id().returning(move |_, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        let svc = make_svc(repo);
+        let result = svc.remove_artifact_by_id(10, 11).await;
+        assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 }

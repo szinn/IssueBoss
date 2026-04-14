@@ -117,7 +117,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        Error,
+        Error, RepositoryError,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         relationship::{
             MockIssueRelationshipRepository,
@@ -311,5 +311,130 @@ mod tests {
 
         let svc = make_service(issue_repo, rel_repo);
         svc.add_relationship("A-1", "A-2", RelationshipKind::RelatedTo).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_relationship_from_slug_not_found() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("Z-99"))
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_service(issue_repo, MockIssueRelationshipRepository::new());
+        let err = svc.add_relationship("Z-99", "A-1", RelationshipKind::DependsOn).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn add_relationship_to_slug_not_found() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-1"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(1, 1, "A-1"))) }));
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("Z-99"))
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_service(issue_repo, MockIssueRelationshipRepository::new());
+        let err = svc.add_relationship("A-1", "Z-99", RelationshipKind::DependsOn).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn remove_relationship_success_returns_true() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-1"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(1, 1, "A-1"))) }));
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-2"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(2, 1, "A-2"))) }));
+
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo.expect_remove().returning(|_, _, _, _| Box::pin(async { Ok(true) }));
+
+        let svc = make_service(issue_repo, rel_repo);
+        let result = svc.remove_relationship("A-1", "A-2", RelationshipKind::DependsOn).await.unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn remove_relationship_not_found_returns_false() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-1"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(1, 1, "A-1"))) }));
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-2"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(2, 1, "A-2"))) }));
+
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo.expect_remove().returning(|_, _, _, _| Box::pin(async { Ok(false) }));
+
+        let svc = make_service(issue_repo, rel_repo);
+        let result = svc.remove_relationship("A-1", "A-2", RelationshipKind::DependsOn).await.unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn remove_relationship_from_slug_not_found() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("Z-99"))
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_service(issue_repo, MockIssueRelationshipRepository::new());
+        let err = svc.remove_relationship("Z-99", "A-1", RelationshipKind::DependsOn).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn remove_relationship_to_slug_not_found() {
+        let mut issue_repo = MockIssueRepository::new();
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("A-1"))
+            .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(1, 1, "A-1"))) }));
+        issue_repo
+            .expect_find_by_slug()
+            .with(always(), eq("Z-99"))
+            .returning(|_, _| Box::pin(async { Ok(None) }));
+
+        let svc = make_service(issue_repo, MockIssueRelationshipRepository::new());
+        let err = svc.remove_relationship("A-1", "Z-99", RelationshipKind::DependsOn).await.unwrap_err();
+        assert!(matches!(err, Error::RepositoryError(RepositoryError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn list_for_issue_returns_relationships() {
+        let relationships = IssueRelationships {
+            depends_on: vec![RelatedIssueSummary {
+                id: 2,
+                slug: "A-2".to_owned(),
+                title: "Issue 2".to_owned(),
+            }],
+            blocks: vec![],
+            related_to: vec![],
+        };
+        let rels = relationships.clone();
+
+        let mut rel_repo = MockIssueRelationshipRepository::new();
+        rel_repo.expect_list_for_issue().returning(move |_, _| {
+            let r = rels.clone();
+            Box::pin(async move { Ok(r) })
+        });
+
+        let svc = make_service(MockIssueRepository::new(), rel_repo);
+        let result = svc.list_for_issue(1).await.unwrap();
+        assert_eq!(result.depends_on.len(), 1);
+        assert_eq!(result.depends_on[0].slug, "A-2");
     }
 }

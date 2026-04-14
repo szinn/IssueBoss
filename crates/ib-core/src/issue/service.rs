@@ -828,4 +828,121 @@ mod tests {
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, None).await;
         assert!(result.is_ok());
     }
+
+    fn make_artifact(id: u64, issue_id: u64, kind: ArtifactKind) -> IssueArtifact {
+        IssueArtifact {
+            id,
+            token: ArtifactToken::new(id),
+            issue_id,
+            kind,
+            slug: None,
+            body: serde_json::json!({}),
+            created_by: "system".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    // ResearchNeeded entry gate: blocked without ResearchTopic
+    #[test]
+    fn gate_research_needed_blocked_without_research_topics() {
+        let result = super::check_transition_gate(&IssueStatus::TriageReview, &IssueStatus::ResearchNeeded, &[]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "no_research_topics"));
+    }
+
+    // ResearchNeeded entry gate: passes with ResearchTopic present
+    #[test]
+    fn gate_research_needed_passes_with_research_topic() {
+        let topic = make_artifact(1, 1, ArtifactKind::ResearchTopic);
+        let result = super::check_transition_gate(&IssueStatus::TriageReview, &IssueStatus::ResearchNeeded, &[topic]);
+        assert!(result.is_ok());
+    }
+
+    // PlanNeeded entry gate: blocked without triage result or spec
+    #[test]
+    fn gate_plan_needed_blocked_without_planning_inputs() {
+        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_planning_input"));
+    }
+
+    // PlanNeeded entry gate: passes with TriageResult
+    #[test]
+    fn gate_plan_needed_passes_with_triage_result() {
+        let mut triage = make_artifact(1, 1, ArtifactKind::TriageResult);
+        triage.slug = Some("triage".into());
+        triage.body = serde_json::json!({"path": "triage.md"});
+        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[triage]);
+        assert!(result.is_ok());
+    }
+
+    // PlanNeeded entry gate: passes with Spec (even without TriageResult)
+    #[test]
+    fn gate_plan_needed_passes_with_spec() {
+        let mut spec = make_artifact(2, 1, ArtifactKind::Spec);
+        spec.slug = Some("spec".into());
+        spec.body = serde_json::json!({"path": "spec.md"});
+        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[spec]);
+        assert!(result.is_ok());
+    }
+
+    // DevNeeded entry gate: blocked without Plan
+    #[test]
+    fn gate_dev_needed_blocked_without_plan() {
+        let result = super::check_transition_gate(&IssueStatus::PlanReview, &IssueStatus::DevNeeded, &[]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_plan"));
+    }
+
+    // DevNeeded entry gate: passes with Plan
+    #[test]
+    fn gate_dev_needed_passes_with_plan() {
+        let mut plan = make_artifact(3, 1, ArtifactKind::Plan);
+        plan.slug = Some("plan".into());
+        plan.body = serde_json::json!({"path": "plan.md"});
+        let result = super::check_transition_gate(&IssueStatus::PlanReview, &IssueStatus::DevNeeded, &[plan]);
+        assert!(result.is_ok());
+    }
+
+    // ResearchNeeded→ResearchInProgress: all topics covered blocks transition
+    #[test]
+    fn gate_research_needed_to_inprogress_blocked_when_all_topics_covered() {
+        let topic = make_artifact(10, 1, ArtifactKind::ResearchTopic);
+        let mut research = make_artifact(11, 1, ArtifactKind::Research);
+        research.body = serde_json::json!({"topic_token": topic.token.to_string(), "status": "completed", "path": "r.md"});
+        let result = super::check_transition_gate(&IssueStatus::ResearchNeeded, &IssueStatus::ResearchInProgress, &[topic, research]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "all_topics_covered"));
+    }
+
+    // SpecInProgress→SpecReview: blocked without Spec
+    #[test]
+    fn gate_spec_inprogress_to_review_blocked_without_spec() {
+        let result = super::check_transition_gate(&IssueStatus::SpecInProgress, &IssueStatus::SpecReview, &[]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_spec"));
+    }
+
+    // SpecInProgress→SpecReview: passes with Spec artifact
+    #[test]
+    fn gate_spec_inprogress_to_review_passes_with_spec() {
+        let mut spec = make_artifact(5, 1, ArtifactKind::Spec);
+        spec.slug = Some("spec".into());
+        spec.body = serde_json::json!({"path": "spec.md"});
+        let result = super::check_transition_gate(&IssueStatus::SpecInProgress, &IssueStatus::SpecReview, &[spec]);
+        assert!(result.is_ok());
+    }
+
+    // PlanInProgress→PlanReview: blocked without Plan
+    #[test]
+    fn gate_plan_inprogress_to_review_blocked_without_plan() {
+        let result = super::check_transition_gate(&IssueStatus::PlanInProgress, &IssueStatus::PlanReview, &[]);
+        assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_plan"));
+    }
+
+    // PlanInProgress→PlanReview: passes with Plan artifact
+    #[test]
+    fn gate_plan_inprogress_to_review_passes_with_plan() {
+        let mut plan = make_artifact(6, 1, ArtifactKind::Plan);
+        plan.slug = Some("plan".into());
+        plan.body = serde_json::json!({"path": "plan.md"});
+        let result = super::check_transition_gate(&IssueStatus::PlanInProgress, &IssueStatus::PlanReview, &[plan]);
+        assert!(result.is_ok());
+    }
 }
