@@ -42,7 +42,8 @@ pub fn setup_insights_repo() -> (TempDir, TempDir) {
         .unwrap();
     assert!(out.status.success(), "git clone failed");
     for args in [vec!["config", "user.email", "t@t.com"], vec!["config", "user.name", "T"]] {
-        Command::new("git").arg("-C").arg(clone.path()).args(&args).output().unwrap();
+        let out = Command::new("git").arg("-C").arg(clone.path()).args(&args).output().unwrap();
+        assert!(out.status.success(), "git config on clone failed: {args:?}");
     }
     (clone, bare)
 }
