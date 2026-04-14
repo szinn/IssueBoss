@@ -2,6 +2,8 @@ mod api_key;
 mod artifact;
 mod context;
 mod fixtures;
+mod grpc_auth;
+mod grpc_context;
 mod issue;
 mod project;
 mod project_member;

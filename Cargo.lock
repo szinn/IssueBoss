@@ -2039,6 +2039,7 @@ version = "0.2.11"
 dependencies = [
  "async-trait",
  "chrono",
+ "ib-api",
  "ib-core",
  "ib-database",
  "sea-orm",
@@ -2046,6 +2047,7 @@ dependencies = [
  "testcontainers",
  "testcontainers-modules",
  "tokio",
+ "tonic",
 ]
 
 [[package]]

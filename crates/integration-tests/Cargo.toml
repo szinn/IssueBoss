@@ -21,6 +21,7 @@ postgres = ["dep:testcontainers", "dep:testcontainers-modules"]
 sqlite = []
 
 [dependencies]
+ib-api.workspace = true
 ib-core.workspace = true
 ib-database.workspace = true
 
@@ -29,6 +30,7 @@ chrono.workspace = true
 sea-orm.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tonic.workspace = true
 
 [dependencies.testcontainers]
 workspace = true

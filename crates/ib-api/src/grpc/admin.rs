@@ -117,7 +117,7 @@ pub struct GrpcAdminService {
 }
 
 impl GrpcAdminService {
-    pub(crate) fn new(core_services: Arc<CoreServices>) -> Self {
+    pub fn new(core_services: Arc<CoreServices>) -> Self {
         Self { core_services }
     }
 }

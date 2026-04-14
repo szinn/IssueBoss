@@ -114,6 +114,7 @@ async fn issue_list_filter_by_priority() {
 }
 
 #[tokio::test]
+#[allow(clippy::similar_names)]
 async fn issue_list_exclude_blocked() {
     use ib_core::relationship::RelationshipKind;
 
