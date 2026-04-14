@@ -138,6 +138,15 @@ Delegate to the `issueboss:triage` agent via the Agent tool.
 4. **Immediately** transition→{Phase}Review — do NOT wait for user instruction; the gate clears as soon as the artifact exists
 5. Present summary; ask user which phase to advance to next (or Done)
 
+### Dev phase
+
+When told to implement an issue that is in DevNeeded:
+
+1. Read the Plan artifact (list_artifacts kind=Plan) — if no Plan artifact exists, **halt immediately** and tell the user a plan is required before development can begin.
+2. Read the plan file at the artifact's path to understand the full implementation scope and any skills it recommends.
+3. transition→DevInProgress
+4. Execute the plan. Use whichever skills the plan recommends (e.g. `superpowers-extended-cc:executing-plans`, `superpowers-extended-cc:test-driven-development`). If no skill is specified, default to `superpowers-extended-cc:executing-plans`.
+
 ### Dev phase integration
 
 When the dev phase uses `superpowers-extended-cc:finishing-a-development-branch` or `superpowers-extended-cc:executing-plans` to complete work, those skills drive the final steps. **You must still transition the issue to DevReview** as soon as the finishing skill presents its completion options to the user — do not wait for the user to ask. This is the same rule as step 4 above; it applies even when another skill is running the completion flow.
