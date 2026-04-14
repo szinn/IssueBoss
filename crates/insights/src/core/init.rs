@@ -6,7 +6,7 @@ use crate::{
     config::Config,
     core::{
         claude_md::{ensure_claude_md_frontmatter_hint, ensure_claude_md_insights_section},
-        git::run_git,
+        git::git_pull,
         gitignore::ensure_gitignore_entry,
         schema_md::ensure_schema_md,
         searchable::rebuild_searchable,
@@ -29,7 +29,7 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     let insights_dir = opts.project_root.join(".insights");
 
     // 1. Pull
-    run_git(repo, &["pull"], verbose)?;
+    git_pull(repo, verbose)?;
 
     // 2. Create directories in repo
     let dirs = [

@@ -1,3 +1,6 @@
+#[cfg(test)]
+pub mod test_support;
+
 pub mod claude_md;
 pub mod commit;
 pub mod git;

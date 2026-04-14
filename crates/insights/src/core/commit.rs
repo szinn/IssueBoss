@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::{
     config::Config,
     core::{
-        git::{git_is_dirty, run_git},
+        git::{git_add_all, git_commit_with_message, git_is_dirty, git_push},
         sync::sync,
     },
 };
@@ -25,13 +25,13 @@ pub fn commit(config: &Config, verbose: bool) -> Result<()> {
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     // 3. Stage all changes
-    run_git(repo, &["add", "-A"], verbose)?;
+    git_add_all(repo, verbose)?;
 
     // 4. Commit (no --allow-empty: we already checked there's something to commit)
-    run_git(repo, &["commit", "-m", &format!("insights update {timestamp}")], verbose)?;
+    git_commit_with_message(repo, &format!("insights update {timestamp}"), verbose)?;
 
     // 5. Push
-    run_git(repo, &["push"], verbose)?;
+    git_push(repo, verbose)?;
 
     println!("Committed and pushed.");
     Ok(())
