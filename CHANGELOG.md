@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/szinn/IssueBoss/compare/v0.2.11..v0.3.0) - 2026-04-14
+
+### Features
+
+- _(skills)_ Add instructions for implementing an issue - ([38bdf3f](https://github.com/szinn/IssueBoss/commit/38bdf3f69cecdab0b060919f93d2abce2bb5e7c0))
+
+### Refactor
+
+- _(cli)_ Extract output formatting into display module - ([c96b7fa](https://github.com/szinn/IssueBoss/commit/c96b7fa14ea8afe5662c686dfce1080b24bcbf41))
+- _(core)_ Extract encode_into helper in token.rs - ([5e317e5](https://github.com/szinn/IssueBoss/commit/5e317e5f934d2aedd0ecdee4c7575db544b4b5a9))
+- _(database)_ Ib-database refactoring audit and test coverage (IB-31) - ([e80958c](https://github.com/szinn/IssueBoss/commit/e80958c085f15b744e4572798cc914262b1ec166))
+
+### Documentation
+
+- _(readme)_ Update to include environment variables and bootstrap - ([5e6679e](https://github.com/szinn/IssueBoss/commit/5e6679e6b2b5d1246b16fba9c26c2396d126e5ef))
+
+### Testing
+
+- _(api)_ Consolidate test helpers and add handler coverage - ([485f1d4](https://github.com/szinn/IssueBoss/commit/485f1d488fd74dc1f832f74728c1e7800863f9eb))
+- _(core)_ Add issue service check_transition_gate tests - ([f1dc5de](https://github.com/szinn/IssueBoss/commit/f1dc5dec9b3d481d66dda1912c310951a3f73c5b))
+- _(frontend)_ Add unknown_route_returns_404 test - ([d3b6af5](https://github.com/szinn/IssueBoss/commit/d3b6af5114d99d71d74c6693eb3cf52aa8b8a48b))
+- _(integration-tests)_ GRPC transport foundation - ([7900ed2](https://github.com/szinn/IssueBoss/commit/7900ed226171e7e237adbe78f5a924b988ffac8c))
+- _(integration-tests)_ Fix cross-database parity - ([6efbcef](https://github.com/szinn/IssueBoss/commit/6efbcef4f212d26286d685a7439e77c940f5dc94))
+- _(integration-tests)_ Spec/plan gate pipeline tests - ([d2c17b3](https://github.com/szinn/IssueBoss/commit/d2c17b3d7b45fc6696f60b71eeff928cb60043e1))
+- _(integration-tests)_ Fill issue/project/user service-layer gaps - ([7746a43](https://github.com/szinn/IssueBoss/commit/7746a43051d17c8acf8b698673127a30d6caa66a))
+
+### Miscellaneous Tasks
+
+- _(cli)_ Refactor init.rs into composable named steps - ([38f847a](https://github.com/szinn/IssueBoss/commit/38f847ab26338049dbff56cf170e07e2486a4637))
+- _(cli)_ Extract shared test fixture to test_support.rs - ([0d18115](https://github.com/szinn/IssueBoss/commit/0d181154816015355d12e7601240063a25cd72f9))
+- _(cli)_ Extract git operation helpers to git.rs - ([b3b5fe1](https://github.com/szinn/IssueBoss/commit/b3b5fe1b2d0bfaa2ede53274a684dde0e1de80c9))
+- _(core)_ Remove unused workspace dependencies - ([de646f8](https://github.com/szinn/IssueBoss/commit/de646f85d81e7e30b430f6ac3210b2749e3bb1fe))
+- _(release)_ Strip binaries - ([77ee634](https://github.com/szinn/IssueBoss/commit/77ee634013076256defefddc6c60be1ebea972b1))
+
 ## [0.2.8] - 2026-04-12
 
 ### Features
