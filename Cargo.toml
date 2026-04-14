@@ -39,7 +39,7 @@ tokio = { version = "1.51.1", default-features = false, features = ["full"] }
 tokio-graceful-shutdown = "0.19.3"
 
 # Web
-axum = "0.8.8"
+axum = "0.8.9"
 tower = "0.5.3"
 
 # Config
