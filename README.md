@@ -66,20 +66,20 @@ IssueBoss is configured via environment variables. Server variables use the `ISS
 
 **Server**
 
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `ISSUEBOSS__DATABASE_URL` | *(required)* | Database connection URL (e.g. `postgres://user:pass@localhost/issueboss`) |
-| `ISSUEBOSS__HTTP_PORT` | `8080` | HTTP/web port |
-| `ISSUEBOSS__MCP_PORT` | `8090` | MCP server port |
-| `ISSUEBOSS__GRPC_PORT` | `9090` | gRPC admin interface port |
+| Variable                  | Default      | Description                                                               |
+| ------------------------- | ------------ | ------------------------------------------------------------------------- |
+| `ISSUEBOSS__DATABASE_URL` | _(required)_ | Database connection URL (e.g. `postgres://user:pass@localhost/issueboss`) |
+| `ISSUEBOSS__HTTP_PORT`    | `8080`       | HTTP/web port                                                             |
+| `ISSUEBOSS__MCP_PORT`     | `8090`       | MCP server port                                                           |
+| `ISSUEBOSS__GRPC_PORT`    | `9090`       | gRPC admin interface port                                                 |
 
 **CLI**
 
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `ISSUEBOSS_GRPC_HOST` | `http://localhost` | gRPC server host (include scheme) |
-| `ISSUEBOSS_GRPC_PORT` | `9090` | gRPC server port |
-| `ISSUEBOSS_API_KEY` | *(none)* | API key sent as `x-api-key` on all admin gRPC requests |
+| Variable              | Default            | Description                                            |
+| --------------------- | ------------------ | ------------------------------------------------------ |
+| `ISSUEBOSS_GRPC_HOST` | `http://localhost` | gRPC server host (include scheme)                      |
+| `ISSUEBOSS_GRPC_PORT` | `9090`             | gRPC server port                                       |
+| `ISSUEBOSS_API_KEY`   | _(none)_           | API key sent as `x-api-key` on all admin gRPC requests |
 
 ## Bootstrap
 
