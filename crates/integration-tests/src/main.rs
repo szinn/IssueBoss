@@ -12,10 +12,6 @@ mod user;
 mod postgres;
 
 #[cfg(feature = "sqlite")]
-#[cfg_attr(
-    feature = "postgres",
-    allow(dead_code, reason = "postgres takes priority; other backends are inactive when it is enabled")
-)]
 mod sqlite;
 
 // Priority: postgres > mysql > sqlite when multiple features are enabled.
