@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -22,6 +22,49 @@ pub struct InitOptions {
     pub project_root: PathBuf,
 }
 
+/// Create the standard directory tree inside the insights git repo.
+fn create_repo_dirs(repo: &Path, project_lower: &str, user: &str) -> Result<()> {
+    let dirs = [
+        repo.join("shared/research"),
+        repo.join("shared/specs"),
+        repo.join("shared/plans"),
+        repo.join(format!("projects/{project_lower}/issues")),
+        repo.join(format!("users/{user}")),
+    ];
+    for dir in &dirs {
+        std::fs::create_dir_all(dir).with_context(|| format!("Failed to create repo directory '{}'", dir.display()))?;
+    }
+    Ok(())
+}
+
+/// Create the local `.insights/` directory if it does not exist.
+fn create_insights_dir(insights_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(insights_dir).with_context(|| format!("Failed to create '{}'", insights_dir.display()))
+}
+
+/// Write symlinks from `.insights/` into the repo.
+fn create_symlinks(insights_dir: &Path, repo: &Path, project_lower: &str, user: &str, verbose: bool) -> Result<()> {
+    ensure_symlink(&insights_dir.join("issues"), &repo.join(format!("projects/{project_lower}/issues")), verbose)?;
+    ensure_symlink(&insights_dir.join("shared"), &repo.join("shared"), verbose)?;
+    ensure_symlink(&insights_dir.join(user), &repo.join(format!("users/{user}")), verbose)?;
+    Ok(())
+}
+
+/// Write the insights config to `.insights/config.toml` relative to
+/// `project_root`.
+fn write_config(repo: &Path, user: &str, project: &str, project_root: &Path) -> Result<()> {
+    let config = Config {
+        repo: repo.to_owned(),
+        user: user.to_owned(),
+        project: project.to_owned(),
+    };
+    let original = std::env::current_dir().context("Failed to get current dir")?;
+    std::env::set_current_dir(project_root).with_context(|| format!("Failed to chdir to '{}'", project_root.display()))?;
+    let result = config.write();
+    std::env::set_current_dir(original).context("Failed to restore working directory")?;
+    result
+}
+
 #[allow(clippy::needless_pass_by_value)]
 pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     let repo = &opts.repo;
@@ -32,27 +75,16 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     git_pull(repo, verbose)?;
 
     // 2. Create directories in repo
-    let dirs = [
-        repo.join("shared/research"),
-        repo.join("shared/specs"),
-        repo.join("shared/plans"),
-        repo.join(format!("projects/{project_lower}/issues")),
-        repo.join(format!("users/{}", opts.user)),
-    ];
-    for dir in &dirs {
-        std::fs::create_dir_all(dir).with_context(|| format!("Failed to create repo directory '{}'", dir.display()))?;
-    }
+    create_repo_dirs(repo, &project_lower, &opts.user)?;
 
     // 3. Create .insights/
-    std::fs::create_dir_all(&insights_dir).with_context(|| format!("Failed to create '{}'", insights_dir.display()))?;
+    create_insights_dir(&insights_dir)?;
 
     // 4. Ensure .gitignore contains .insights/
     ensure_gitignore_entry(&opts.project_root, ".insights/", verbose)?;
 
     // 5. Create symlinks
-    ensure_symlink(&insights_dir.join("issues"), &repo.join(format!("projects/{project_lower}/issues")), verbose)?;
-    ensure_symlink(&insights_dir.join("shared"), &repo.join("shared"), verbose)?;
-    ensure_symlink(&insights_dir.join(&opts.user), &repo.join(format!("users/{}", opts.user)), verbose)?;
+    create_symlinks(&insights_dir, repo, &project_lower, &opts.user, verbose)?;
 
     // 6. Build searchable tree
     rebuild_searchable(&insights_dir, verbose)?;
@@ -61,16 +93,7 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     ensure_schema_md(&repo.join("shared"), verbose)?;
 
     // 8. Write config
-    // Config::write() uses CWD-relative path (.insights/config.toml)
-    let config = Config {
-        repo: repo.clone(),
-        user: opts.user.clone(),
-        project: opts.project.clone(),
-    };
-    let original = std::env::current_dir().context("Failed to get current dir")?;
-    std::env::set_current_dir(&opts.project_root).with_context(|| format!("Failed to chdir to '{}'", opts.project_root.display()))?;
-    let result = config.write();
-    std::env::set_current_dir(original).context("Failed to restore working directory")?;
+    write_config(repo, &opts.user, &opts.project, &opts.project_root)?;
 
     // 9. Write CLAUDE.md insights section (idempotent)
     ensure_claude_md_insights_section(&opts.project_root, &opts.user)?;
@@ -78,7 +101,7 @@ pub fn init(opts: InitOptions, verbose: bool) -> Result<()> {
     // 10. Add front-matter hint to CLAUDE.md (idempotent)
     ensure_claude_md_frontmatter_hint(&opts.project_root)?;
 
-    result
+    Ok(())
 }
 
 #[cfg(test)]
@@ -136,6 +159,68 @@ mod tests {
 
         (clone, bare)
     }
+
+    // --- Step-level unit tests (no git repo required) ---
+
+    #[test]
+    fn create_repo_dirs_creates_expected_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        create_repo_dirs(dir.path(), "myproject", "alice").unwrap();
+
+        assert!(dir.path().join("shared/research").is_dir());
+        assert!(dir.path().join("shared/specs").is_dir());
+        assert!(dir.path().join("shared/plans").is_dir());
+        assert!(dir.path().join("projects/myproject/issues").is_dir());
+        assert!(dir.path().join("users/alice").is_dir());
+    }
+
+    #[test]
+    fn create_repo_dirs_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        create_repo_dirs(dir.path(), "myproject", "alice").unwrap();
+        create_repo_dirs(dir.path(), "myproject", "alice").unwrap(); // must not error
+    }
+
+    #[test]
+    fn create_insights_dir_creates_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let insights = dir.path().join(".insights");
+        create_insights_dir(&insights).unwrap();
+        assert!(insights.is_dir());
+    }
+
+    #[test]
+    fn create_symlinks_creates_three_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        let insights = dir.path().join(".insights");
+        std::fs::create_dir_all(repo.join("projects/myproject/issues")).unwrap();
+        std::fs::create_dir_all(repo.join("shared")).unwrap();
+        std::fs::create_dir_all(repo.join("users/alice")).unwrap();
+        std::fs::create_dir_all(&insights).unwrap();
+
+        create_symlinks(&insights, &repo, "myproject", "alice", false).unwrap();
+
+        assert!(insights.join("issues").is_symlink(), "issues symlink missing");
+        assert!(insights.join("shared").is_symlink(), "shared symlink missing");
+        assert!(insights.join("alice").is_symlink(), "user symlink missing");
+    }
+
+    #[test]
+    fn write_config_creates_config_toml() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        write_config(repo_dir.path(), "alice", "MyProject", project_dir.path()).unwrap();
+
+        let config_path = project_dir.path().join(".insights/config.toml");
+        assert!(config_path.exists(), "config.toml not written");
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("MyProject"), "project name missing from config");
+        assert!(content.contains("alice"), "user name missing from config");
+    }
+
+    // --- Full integration tests (require git clone fixture) ---
 
     #[test]
     fn full_init() {
