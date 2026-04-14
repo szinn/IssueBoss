@@ -20,6 +20,14 @@ const DECODE_TABLE: [u8; 91] = {
     table
 };
 
+/// Shared encode implementation — `value` is widened to `u128` by the caller.
+fn encode_into(mut value: u128, buf: &mut [u8]) {
+    for i in (0..buf.len()).rev() {
+        buf[i] = ALPHABET[(value & 0x1F) as usize];
+        value >>= 5;
+    }
+}
+
 /// Trait that defines the prefix for a token kind.
 pub trait TokenPrefix: fmt::Debug + Clone + PartialEq + Eq {
     const PREFIX: &'static str;
@@ -69,11 +77,7 @@ impl TokenId for u64 {
     }
 
     fn encode_to_buf(self, buf: &mut [u8]) {
-        let mut remaining = self;
-        for i in (0..Self::ENCODED_LEN).rev() {
-            buf[i] = ALPHABET[(remaining & 0x1F) as usize];
-            remaining >>= 5;
-        }
+        encode_into(u128::from(self), buf);
     }
 
     fn decode(s: &str) -> Result<Self, TokenError> {
@@ -105,11 +109,7 @@ impl TokenId for u128 {
     }
 
     fn encode_to_buf(self, buf: &mut [u8]) {
-        let mut remaining = self;
-        for i in (0..Self::ENCODED_LEN).rev() {
-            buf[i] = ALPHABET[(remaining & 0x1F) as usize];
-            remaining >>= 5;
-        }
+        encode_into(self, buf);
     }
 
     fn decode(s: &str) -> Result<Self, TokenError> {

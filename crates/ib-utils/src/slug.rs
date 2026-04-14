@@ -82,4 +82,26 @@ mod tests {
     fn all_special_chars() {
         assert_eq!(slugify("!!!"), "");
     }
+
+    #[test]
+    fn pure_unicode_returns_empty() {
+        // All non-ASCII chars map to hyphens; after collapse and strip, result is "".
+        assert_eq!(slugify("日本語"), "");
+    }
+
+    #[test]
+    fn leading_special_chars_stripped() {
+        // Leading non-alphanumeric chars produce leading hyphens which are collapsed
+        // but then stripped because the slug must not start with a hyphen.
+        assert_eq!(slugify("!!!hello"), "hello");
+    }
+
+    #[test]
+    fn exactly_50_chars_not_truncated() {
+        // A slug that is exactly 50 characters long must be returned unchanged.
+        let input = "a".repeat(50);
+        let result = slugify(&input);
+        assert_eq!(result.len(), 50);
+        assert_eq!(result, input);
+    }
 }
