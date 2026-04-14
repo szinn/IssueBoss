@@ -1,11 +1,11 @@
-pub mod app;
 mod health;
+pub mod stub;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use app::stay_tuned_html;
 use axum::{Router, response::Html, routing::get};
 use ib_core::CoreServices;
+use stub::stay_tuned_html;
 use tokio_graceful_shutdown::{IntoSubsystem, SubsystemHandle};
 
 pub struct FrontendSubsystem {
@@ -65,5 +65,13 @@ mod tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_str = std::str::from_utf8(&body).unwrap();
         assert!(body_str.contains("Stay tuned"), "expected 'Stay tuned' in body");
+    }
+
+    #[tokio::test]
+    async fn unknown_route_returns_404() {
+        let app = create_frontend_router();
+        let request = Request::builder().uri("/this/route/does/not/exist").body(Body::empty()).unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

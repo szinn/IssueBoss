@@ -4,6 +4,7 @@ async fn liveness() -> &'static str {
     r#"{"status":"ok"}"#
 }
 
+// TODO(IB-13): readiness check should verify DB connectivity
 async fn readiness() -> &'static str {
     r#"{"status":"ok"}"#
 }
