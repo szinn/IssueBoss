@@ -20,6 +20,11 @@ config:
     nvim config.sops.env
     sops -e -i config.sops.env
 
+[doc('Format and lint')]
+fmt-lint:
+    just fmt
+    just lint
+
 [doc('Format code and documentation')]
 fmt:
     cargo +nightly fmt --all
@@ -33,21 +38,11 @@ changelog:
 
 [doc('Build all applications')]
 build:
-    # just tailwindcss
     cargo build --bin issueboss --bin insights --all-features
 
 [doc('Run IssueBoss')]
 run:
-    just tailwindcss
-    dx serve --addr 0.0.0.0 --web --package issueboss --args server
-
-[doc('Bundle the web and server components')]
-bundle:
-    dx bundle --web --package issueboss
-
-[doc('Run the bundld application as a binary')]
-run-bundle:
-    ./target/dx/bookboss/debug/web/issueboss
+    cargo run --features server --bin issueboss -- server
 
 [doc('Create a release')]
 release VERSION:
@@ -57,6 +52,7 @@ release VERSION:
 lint:
     just clippy
     just buf
+
 [doc('Run Clippy on codebase for linting')]
 clippy:
     cargo +nightly clippy --workspace --all-targets --all-features --target-dir target/clippy
@@ -68,10 +64,6 @@ buf:
 [doc('Update rust crate dependencies')]
 deps:
     cargo upgrade
-
-[doc('Update tailwindcss')]
-tailwindcss:
-    tailwindcss -i ./crates/frontend/assets/input.css -o ./crates/frontend/assets/tailwind.css
 
 [doc('Run quick tests using nextest')]
 quick-test:
