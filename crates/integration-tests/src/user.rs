@@ -77,3 +77,27 @@ async fn delete_user_returns_deleted_user() {
     let found = ctx.services.user_service().find_by_id(id).await.unwrap();
     assert!(found.is_none());
 }
+
+#[tokio::test]
+async fn update_user_fields() {
+    let ctx = setup().await;
+    let user = fixtures::create_user(&ctx.services, "update-me").await;
+    let mut updated = user.clone();
+    updated.full_name = "Updated Name".to_string();
+
+    let saved = ctx.services.user_service().update_user(updated).await.unwrap();
+    assert_eq!(saved.full_name, "Updated Name");
+}
+
+#[tokio::test]
+async fn list_users_returns_all() {
+    let ctx = setup().await;
+    fixtures::create_user(&ctx.services, "list-user-one").await;
+    fixtures::create_user(&ctx.services, "list-user-two").await;
+
+    let users = ctx.services.user_service().list_users().await.unwrap();
+    assert!(users.len() >= 2, "expected at least 2 users");
+    let names: Vec<_> = users.iter().map(|u| u.username.as_str()).collect();
+    assert!(names.contains(&"list-user-one"));
+    assert!(names.contains(&"list-user-two"));
+}
