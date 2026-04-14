@@ -4,6 +4,34 @@ use ib_core::{
     issue::IssueStatus,
 };
 
+// ---------------------------------------------------------------------------
+// Helper: advance an issue through TriageInProgress→TriageReview by adding
+// a TriageResult artifact. Returns the issue in TriageReview state.
+// ---------------------------------------------------------------------------
+async fn triage_issue(services: &ib_core::CoreServices, issue: ib_core::issue::Issue, slug_hint: &str) -> ib_core::issue::Issue {
+    let issue = services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::TriageInProgress, None, Some(0))
+        .await
+        .unwrap();
+    services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::TriageResult,
+            slug: None,
+            body: serde_json::json!({ "path": format!(".insights/triage/{slug_hint}.md") }),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+    services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::TriageReview, None, Some(0))
+        .await
+        .unwrap()
+}
+
 use crate::{fixtures, setup};
 
 #[tokio::test]
@@ -357,4 +385,237 @@ async fn handoff_artifact_lifecycle() {
     let moved = ctx.services.artifact_service().move_artifact(old_path, new_path).await.unwrap();
     assert_eq!(moved.len(), 1);
     assert_eq!(moved[0].body["path"], new_path);
+}
+
+// ---------------------------------------------------------------------------
+// Spec and Plan gate tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn spec_gate_blocks_without_spec() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "SpecGate", "spec-gate-block", "SGB").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "SGB", "Spec gate test").await;
+
+    let issue = triage_issue(&ctx.services, issue, "sgb-1").await;
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecInProgress, None, Some(0))
+        .await
+        .unwrap();
+
+    let err = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecReview, None, Some(0))
+        .await;
+    assert!(
+        matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_spec"),
+        "expected missing_spec gate failure, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn spec_gate_passes_with_spec() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "SpecPass", "spec-gate-pass", "SGP").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "SGP", "Spec gate pass").await;
+
+    let issue = triage_issue(&ctx.services, issue, "sgp-1").await;
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecInProgress, None, Some(0))
+        .await
+        .unwrap();
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Spec,
+            slug: Some("spec-doc".into()),
+            body: serde_json::json!({"path": ".insights/specs/sgp-1-spec.md"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecReview, None, Some(0))
+        .await
+        .unwrap();
+    assert_eq!(issue.status, IssueStatus::SpecReview);
+}
+
+#[tokio::test]
+async fn plan_gate_blocks_without_plan() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "PlanBlock", "plan-gate-block", "PGB").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "PGB", "Plan gate block").await;
+
+    let issue = triage_issue(&ctx.services, issue, "pgb-1").await;
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanInProgress, None, Some(0))
+        .await
+        .unwrap();
+
+    let err = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanReview, None, Some(0))
+        .await;
+    assert!(
+        matches!(err, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_plan"),
+        "expected missing_plan gate failure, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn plan_gate_passes_with_plan() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "PlanPass", "plan-gate-pass", "PGP").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "PGP", "Plan gate pass").await;
+
+    let issue = triage_issue(&ctx.services, issue, "pgp-1").await;
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanInProgress, None, Some(0))
+        .await
+        .unwrap();
+
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Plan,
+            slug: Some("plan-doc".into()),
+            body: serde_json::json!({"path": ".insights/plans/pgp-1-plan.md"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanReview, None, Some(0))
+        .await
+        .unwrap();
+    assert_eq!(issue.status, IssueStatus::PlanReview);
+}
+
+#[tokio::test]
+async fn full_pipeline_triage_through_plan_review() {
+    let ctx = setup().await;
+    let project = fixtures::create_project(&ctx.services, "Pipeline", "pipeline-full", "PL").await;
+    let issue = fixtures::create_issue(&ctx.services, project.id, "PL", "Full pipeline").await;
+    assert_eq!(issue.status, IssueStatus::TriageNeeded);
+
+    // Triage phase
+    let issue = triage_issue(&ctx.services, issue, "pl-1").await;
+    assert_eq!(issue.status, IssueStatus::TriageReview);
+
+    // Spec phase
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecInProgress, None, Some(0))
+        .await
+        .unwrap();
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Spec,
+            slug: Some("spec-pl".into()),
+            body: serde_json::json!({"path": ".insights/specs/pl-1-spec.md"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::SpecReview, Some("Spec approved".into()), Some(0))
+        .await
+        .unwrap();
+    assert_eq!(issue.status, IssueStatus::SpecReview);
+
+    // Plan phase
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanNeeded, None, Some(0))
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanInProgress, None, Some(0))
+        .await
+        .unwrap();
+    ctx.services
+        .artifact_service()
+        .add_artifact(NewArtifact {
+            issue_id: issue.id,
+            kind: ArtifactKind::Plan,
+            slug: Some("plan-pl".into()),
+            body: serde_json::json!({"path": ".insights/plans/pl-1-plan.md"}),
+            created_by: "U_test".into(),
+        })
+        .await
+        .unwrap();
+    let issue = ctx
+        .services
+        .issue_service()
+        .transition_issue(issue.token, IssueStatus::PlanReview, Some("Plan approved".into()), Some(0))
+        .await
+        .unwrap();
+    assert_eq!(issue.status, IssueStatus::PlanReview);
+
+    // Verify StatusTransition artifacts accumulated
+    let transitions = ctx
+        .services
+        .artifact_service()
+        .list_artifacts(issue.id, Some(vec![ArtifactKind::StatusTransition]), false)
+        .await
+        .unwrap();
+    assert!(transitions.len() >= 6, "expected at least 6 status transitions, got {}", transitions.len());
 }
