@@ -965,7 +965,6 @@ mod tests {
 
     use chrono::Utc;
     use ib_core::{
-        api_key::MockApiKeyRepository,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectMember, ProjectToken},
         types::Capabilities,
@@ -1033,18 +1032,80 @@ mod tests {
         }
     }
 
+    struct TestCoreBuilder {
+        project_repo: MockProjectRepository,
+        issue_repo: MockIssueRepository,
+        user_repo: MockUserRepository,
+        artifact_repo: Option<ib_core::artifact::MockArtifactRepository>,
+        member_repo: Option<ib_core::project::MockProjectMemberRepository>,
+        rel_repo: Option<ib_core::relationship::MockIssueRelationshipRepository>,
+    }
+
+    impl TestCoreBuilder {
+        fn new(project_repo: MockProjectRepository, issue_repo: MockIssueRepository) -> Self {
+            Self {
+                project_repo,
+                issue_repo,
+                user_repo: MockUserRepository::new(),
+                artifact_repo: None,
+                member_repo: None,
+                rel_repo: None,
+            }
+        }
+
+        /// Register a user so that `find_by_id` lookups succeed when building
+        /// summaries.
+        fn with_user(mut self, user: ib_core::user::User) -> Self {
+            let u = user;
+            self.user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+            self
+        }
+
+        fn with_user_repo(mut self, user_repo: MockUserRepository) -> Self {
+            self.user_repo = user_repo;
+            self
+        }
+
+        fn with_artifacts(mut self, artifact_repo: ib_core::artifact::MockArtifactRepository) -> Self {
+            self.artifact_repo = Some(artifact_repo);
+            self
+        }
+
+        fn with_members(mut self, member_repo: ib_core::project::MockProjectMemberRepository) -> Self {
+            self.member_repo = Some(member_repo);
+            self
+        }
+
+        fn with_relationships(mut self, rel_repo: ib_core::relationship::MockIssueRelationshipRepository) -> Self {
+            self.rel_repo = Some(rel_repo);
+            self
+        }
+
+        fn build(self) -> Arc<ib_core::CoreServices> {
+            use ib_core::repository::testing::default_repository_service_builder;
+            let mut builder = default_repository_service_builder()
+                .user_repository(Arc::new(self.user_repo))
+                .project_repository(Arc::new(self.project_repo))
+                .issue_repository(Arc::new(self.issue_repo));
+            if let Some(repo) = self.artifact_repo {
+                builder = builder.artifact_repository(Arc::new(repo) as Arc<dyn ib_core::artifact::ArtifactRepository>);
+            }
+            if let Some(repo) = self.member_repo {
+                builder = builder.project_member_repository(Arc::new(repo));
+            }
+            if let Some(repo) = self.rel_repo {
+                builder = builder.relationship_repository(Arc::new(repo) as Arc<dyn ib_core::relationship::IssueRelationshipRepository>);
+            }
+            let repo_svc = Arc::new(builder.build().unwrap());
+            ib_core::create_services(repo_svc)
+        }
+    }
+
     fn make_core(project_repo: MockProjectRepository, issue_repo: MockIssueRepository) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(MockUserRepository::new()))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo).build()
     }
 
     fn make_core_with_artifacts(
@@ -1052,43 +1113,11 @@ mod tests {
         issue_repo: MockIssueRepository,
         artifact_repo: ib_core::artifact::MockArtifactRepository,
     ) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(MockUserRepository::new()))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .artifact_repository(Arc::new(artifact_repo))
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo).with_artifacts(artifact_repo).build()
     }
 
-    /// Like `make_core` but registers the given `User` in the mock user repo
-    /// so that `resolve_user_ref` calls succeed when building
-    /// `IssueSummaryMcp`.
     fn make_core_with_user(project_repo: MockProjectRepository, issue_repo: MockIssueRepository, user: ib_core::user::User) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let mut user_repo = MockUserRepository::new();
-        {
-            let u = user.clone();
-            user_repo.expect_find_by_id().returning(move |_, _| {
-                let u = u.clone();
-                Box::pin(async move { Ok(Some(u)) })
-            });
-        }
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(user_repo))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo).with_user(user).build()
     }
 
     fn make_core_with_members(
@@ -1097,18 +1126,10 @@ mod tests {
         user_repo: MockUserRepository,
         member_repo: ib_core::project::MockProjectMemberRepository,
     ) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(user_repo))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .project_member_repository(Arc::new(member_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo)
+            .with_user_repo(user_repo)
+            .with_members(member_repo)
+            .build()
     }
 
     fn make_core_with_artifacts_and_user(
@@ -1117,26 +1138,10 @@ mod tests {
         artifact_repo: ib_core::artifact::MockArtifactRepository,
         user: ib_core::user::User,
     ) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let mut user_repo = MockUserRepository::new();
-        {
-            let u = user.clone();
-            user_repo.expect_find_by_id().returning(move |_, _| {
-                let u = u.clone();
-                Box::pin(async move { Ok(Some(u)) })
-            });
-        }
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(user_repo))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .artifact_repository(Arc::new(artifact_repo))
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo)
+            .with_artifacts(artifact_repo)
+            .with_user(user)
+            .build()
     }
 
     fn make_core_with_relationships(
@@ -1144,18 +1149,7 @@ mod tests {
         issue_repo: MockIssueRepository,
         rel_repo: ib_core::relationship::MockIssueRelationshipRepository,
     ) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(MockUserRepository::new()))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .relationship_repository(Arc::new(rel_repo) as Arc<dyn ib_core::relationship::IssueRelationshipRepository>)
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo).with_relationships(rel_repo).build()
     }
 
     fn make_core_with_relationships_and_user(
@@ -1164,26 +1158,10 @@ mod tests {
         rel_repo: ib_core::relationship::MockIssueRelationshipRepository,
         user: ib_core::user::User,
     ) -> Arc<ib_core::CoreServices> {
-        use ib_core::repository::testing::default_repository_service_builder;
-        let mut user_repo = MockUserRepository::new();
-        {
-            let u = user.clone();
-            user_repo.expect_find_by_id().returning(move |_, _| {
-                let u = u.clone();
-                Box::pin(async move { Ok(Some(u)) })
-            });
-        }
-        let repo_svc = Arc::new(
-            default_repository_service_builder()
-                .user_repository(Arc::new(user_repo))
-                .api_key_repository(Arc::new(MockApiKeyRepository::new()))
-                .project_repository(Arc::new(project_repo))
-                .issue_repository(Arc::new(issue_repo))
-                .relationship_repository(Arc::new(rel_repo) as Arc<dyn ib_core::relationship::IssueRelationshipRepository>)
-                .build()
-                .unwrap(),
-        );
-        ib_core::create_services(repo_svc)
+        TestCoreBuilder::new(project_repo, issue_repo)
+            .with_relationships(rel_repo)
+            .with_user(user)
+            .build()
     }
 
     // -----------------------------------------------------------------------

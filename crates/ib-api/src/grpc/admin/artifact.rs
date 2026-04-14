@@ -185,67 +185,26 @@ mod tests {
     use std::sync::Arc;
 
     use ib_core::{
-        api_key::{ApiKey, MockApiKeyRepository, sha256_hex},
+        api_key::MockApiKeyRepository,
         artifact::{
             MockArtifactRepository,
             model::{ArtifactKind, ArtifactToken, IssueArtifact},
         },
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
-        project::{MockProjectMemberRepository, MockProjectRepository},
+        project::MockProjectRepository,
         user::MockUserRepository,
     };
     use tonic::Code;
 
     use crate::grpc::{
-        admin::{GrpcAdminService, artifact::handler},
+        admin::{
+            GrpcAdminService,
+            artifact::handler,
+            tests::{fake_api_key_for_user, fake_non_admin_user, make_request_with_api_key, no_member_repo},
+        },
         admin_proto::{AddArtifactRequest, ListArtifactsRequest, MoveArtifactRequest, RemoveArtifactRequest, UpdateArtifactRequest},
         error::map_core_error,
     };
-
-    const TEST_API_KEY: &str = "test-api-key-nonmember";
-
-    fn fake_non_admin_user(id: u64) -> ib_core::user::User {
-        use chrono::Utc;
-        ib_core::user::User {
-            id,
-            token: ib_core::user::UserToken::new(id),
-            username: "non_admin".to_owned(),
-            full_name: "Non Admin".to_owned(),
-            password_hash: "hash".to_owned(),
-            email_address: "non_admin@example.com".to_owned(),
-            capabilities: ib_core::types::Capabilities::default(),
-            change_password_on_login: false,
-            version: 0,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
-    fn fake_api_key_for_user(user_id: u64) -> ApiKey {
-        use chrono::Utc;
-        ApiKey {
-            id: 1,
-            user_id,
-            key_type: "ib_live".to_owned(),
-            key_hash: sha256_hex(TEST_API_KEY),
-            key_prefix: "ib_live_XXXX".to_owned(),
-            name: None,
-            created_at: Utc::now(),
-            last_used_at: None,
-        }
-    }
-
-    fn make_request_with_api_key<T>(body: T) -> tonic::Request<T> {
-        let mut req = tonic::Request::new(body);
-        req.metadata_mut().insert("x-api-key", TEST_API_KEY.parse().unwrap());
-        req
-    }
-
-    fn no_member_repo() -> MockProjectMemberRepository {
-        let mut r = MockProjectMemberRepository::new();
-        r.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
-        r
-    }
 
     fn make_service_non_member(issue_repo: MockIssueRepository, artifact_repo: MockArtifactRepository) -> GrpcAdminService {
         let user = fake_non_admin_user(42);

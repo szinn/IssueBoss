@@ -22,7 +22,7 @@ pub(crate) mod handler {
         Ok(project_to_proto(project))
     }
 
-    pub async fn update_project(core: &Arc<CoreServices>, req: UpdateProjectRequest) -> Result<ProjectResponse, Error> {
+    pub(crate) async fn update_project(core: &Arc<CoreServices>, req: UpdateProjectRequest) -> Result<ProjectResponse, Error> {
         let mut project = core
             .project_service()
             .find_by_slug(&req.slug)
@@ -35,7 +35,7 @@ pub(crate) mod handler {
         Ok(project_to_proto(updated))
     }
 
-    pub async fn delete_project(core: &Arc<CoreServices>, req: DeleteProjectRequest) -> Result<Empty, Error> {
+    pub(crate) async fn delete_project(core: &Arc<CoreServices>, req: DeleteProjectRequest) -> Result<Empty, Error> {
         let project = core
             .project_service()
             .find_by_slug(&req.slug)
@@ -45,7 +45,7 @@ pub(crate) mod handler {
         Ok(Empty {})
     }
 
-    pub async fn get_project(core: &Arc<CoreServices>, req: GetProjectRequest) -> Result<ProjectResponse, Error> {
+    pub(crate) async fn get_project(core: &Arc<CoreServices>, req: GetProjectRequest) -> Result<ProjectResponse, Error> {
         let project = core
             .project_service()
             .find_by_slug(&req.slug)
@@ -54,14 +54,14 @@ pub(crate) mod handler {
         Ok(project_to_proto(project))
     }
 
-    pub async fn list_projects(core: &Arc<CoreServices>, _req: ListProjectsRequest) -> Result<ListProjectsResponse, Error> {
+    pub(crate) async fn list_projects(core: &Arc<CoreServices>, _req: ListProjectsRequest) -> Result<ListProjectsResponse, Error> {
         let projects = core.project_service().list_projects().await?;
         Ok(ListProjectsResponse {
             projects: projects.into_iter().map(project_to_proto).collect(),
         })
     }
 
-    pub async fn add_project_member(core: &Arc<CoreServices>, req: AddProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
+    pub(crate) async fn add_project_member(core: &Arc<CoreServices>, req: AddProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
         let project = core
             .project_service()
             .find_by_slug(&req.project_slug)
@@ -84,7 +84,7 @@ pub(crate) mod handler {
         Ok(project_member_to_proto(member, &user))
     }
 
-    pub async fn update_project_member(core: &Arc<CoreServices>, req: UpdateProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
+    pub(crate) async fn update_project_member(core: &Arc<CoreServices>, req: UpdateProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
         let project = core
             .project_service()
             .find_by_slug(&req.project_slug)
@@ -293,14 +293,18 @@ mod tests {
     use chrono::Utc;
     use ib_core::{
         api_key::MockApiKeyRepository,
-        project::{MockProjectRepository, Project, ProjectToken},
-        user::MockUserRepository,
+        project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectMember, ProjectToken},
+        types::Capabilities,
+        user::{MockUserRepository, User, UserToken},
     };
     use tonic::Code;
 
     use crate::grpc::{
         admin::{project::handler, tests::make_core_services},
-        admin_proto::{CreateProjectRequest, GetProjectRequest, ListProjectsRequest},
+        admin_proto::{
+            AddProjectMemberRequest, CreateProjectRequest, DeleteProjectRequest, GetProjectRequest, ListProjectMembersRequest, ListProjectsRequest,
+            RemoveProjectMemberRequest, UpdateProjectMemberRequest, UpdateProjectRequest,
+        },
         error::map_core_error,
     };
 
@@ -409,5 +413,288 @@ mod tests {
         .map_err(map_core_error)
         .unwrap_err();
         assert_eq!(resp.code(), Code::InvalidArgument);
+    }
+
+    fn fake_user(id: u64, username: &str) -> User {
+        User {
+            id,
+            token: UserToken::new(id),
+            username: username.to_owned(),
+            full_name: username.to_owned(),
+            password_hash: String::new(),
+            email_address: format!("{username}@example.com"),
+            capabilities: Capabilities::default(),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn fake_member(project_id: u64, user_id: u64) -> ProjectMember {
+        ProjectMember {
+            project_id,
+            user_id,
+            capabilities: Capabilities::default(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn build_core(
+        project_repo: MockProjectRepository,
+        member_repo: MockProjectMemberRepository,
+        user_repo: MockUserRepository,
+    ) -> std::sync::Arc<ib_core::CoreServices> {
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .project_member_repository(std::sync::Arc::new(member_repo))
+                .build()
+                .unwrap(),
+        );
+        ib_core::create_services(repo_svc)
+    }
+
+    #[tokio::test]
+    async fn update_project_success() {
+        let project = fake_project(1, "myapp");
+        let updated = Project {
+            name: "New Name".into(),
+            ..project.clone()
+        };
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            let u = updated.clone();
+            project_repo.expect_update().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(u) })
+            });
+        }
+        let core = build_core(project_repo, MockProjectMemberRepository::new(), MockUserRepository::new());
+        let resp = handler::update_project(
+            &core,
+            UpdateProjectRequest {
+                slug: "myapp".into(),
+                name: Some("New Name".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.name, "New Name");
+    }
+
+    #[tokio::test]
+    async fn delete_project_success() {
+        let project = fake_project(1, "myapp");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            // delete_project service re-loads by id inside the transaction
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        project_repo.expect_delete().returning(|_, p| Box::pin(async move { Ok(p) }));
+        let core = build_core(project_repo, MockProjectMemberRepository::new(), MockUserRepository::new());
+        handler::delete_project(&core, DeleteProjectRequest { slug: "myapp".into() }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_project_member_success() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user(10, "alice");
+        let member = fake_member(1, 10);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        {
+            // add_member service re-loads project by id inside the transaction
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_username().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let m = member.clone();
+            member_repo.expect_create().returning(move |_, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(m) })
+            });
+        }
+        let core = build_core(project_repo, member_repo, user_repo);
+        let resp = handler::add_project_member(
+            &core,
+            AddProjectMemberRequest {
+                project_slug: "myapp".into(),
+                username: "alice".into(),
+                capabilities: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.username, "alice");
+    }
+
+    #[tokio::test]
+    async fn update_project_member_success() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user(10, "alice");
+        let member = fake_member(1, 10);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_username().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let m = member.clone();
+            member_repo.expect_find().returning(move |_, _, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(Some(m)) })
+            });
+        }
+        {
+            let m = member.clone();
+            member_repo.expect_update().returning(move |_, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(m) })
+            });
+        }
+        let core = build_core(project_repo, member_repo, user_repo);
+        let resp = handler::update_project_member(
+            &core,
+            UpdateProjectMemberRequest {
+                project_slug: "myapp".into(),
+                username: "alice".into(),
+                capabilities: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.username, "alice");
+    }
+
+    #[tokio::test]
+    async fn remove_project_member_success() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user(10, "alice");
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_username().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            // remove_member service checks member exists before deleting
+            let m = fake_member(1, 10);
+            member_repo.expect_find().returning(move |_, _, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(Some(m)) })
+            });
+        }
+        member_repo.expect_delete().returning(|_, _, _| Box::pin(async { Ok(()) }));
+        let core = build_core(project_repo, member_repo, user_repo);
+        handler::remove_project_member(
+            &core,
+            RemoveProjectMemberRequest {
+                project_slug: "myapp".into(),
+                username: "alice".into(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_project_members_success() {
+        let project = fake_project(1, "myapp");
+        let user = fake_user(10, "alice");
+        let member = fake_member(1, 10);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        {
+            let u = user.clone();
+            user_repo.expect_find_by_id().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(Some(u)) })
+            });
+        }
+        let mut member_repo = MockProjectMemberRepository::new();
+        {
+            let m = member.clone();
+            member_repo.expect_list().returning(move |_, _| {
+                let m = m.clone();
+                Box::pin(async move { Ok(vec![m]) })
+            });
+        }
+        let core = build_core(project_repo, member_repo, user_repo);
+        let resp = handler::list_project_members(&core, ListProjectMembersRequest { project_slug: "myapp".into() })
+            .await
+            .unwrap();
+        assert_eq!(resp.members.len(), 1);
+        assert_eq!(resp.members[0].username, "alice");
     }
 }

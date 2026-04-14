@@ -247,7 +247,7 @@ mod tests {
     use std::sync::Arc;
 
     use ib_core::{
-        api_key::{ApiKey, MockApiKeyRepository, sha256_hex},
+        api_key::MockApiKeyRepository,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
         project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectToken},
         relationship::{IssueRelationships, MockIssueRelationshipRepository},
@@ -256,49 +256,14 @@ mod tests {
     use tonic::Code;
 
     use crate::grpc::{
-        admin::{GrpcAdminService, issue::handler},
+        admin::{
+            GrpcAdminService,
+            issue::handler,
+            tests::{fake_api_key_for_user, fake_non_admin_user, make_request_with_api_key},
+        },
         admin_proto::{CreateIssueRequest, GetIssueRequest, ListIssuesRequest, TransitionIssueRequest, UpdateIssueRequest},
         error::map_core_error,
     };
-
-    const TEST_API_KEY: &str = "test-api-key-nonmember";
-
-    fn fake_non_admin_user(id: u64) -> ib_core::user::User {
-        use chrono::Utc;
-        ib_core::user::User {
-            id,
-            token: ib_core::user::UserToken::new(id),
-            username: "non_admin".to_owned(),
-            full_name: "Non Admin".to_owned(),
-            password_hash: "hash".to_owned(),
-            email_address: "non_admin@example.com".to_owned(),
-            capabilities: ib_core::types::Capabilities::default(),
-            change_password_on_login: false,
-            version: 0,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
-    fn fake_api_key_for_user(user_id: u64) -> ApiKey {
-        use chrono::Utc;
-        ApiKey {
-            id: 1,
-            user_id,
-            key_type: "ib_live".to_owned(),
-            key_hash: sha256_hex(TEST_API_KEY),
-            key_prefix: "ib_live_XXXX".to_owned(),
-            name: None,
-            created_at: Utc::now(),
-            last_used_at: None,
-        }
-    }
-
-    fn make_request_with_api_key<T>(body: T) -> tonic::Request<T> {
-        let mut req = tonic::Request::new(body);
-        req.metadata_mut().insert("x-api-key", TEST_API_KEY.parse().unwrap());
-        req
-    }
 
     fn make_service_non_member(
         project_repo: MockProjectRepository,
@@ -867,5 +832,156 @@ mod tests {
         });
         let err = svc.transition_issue(req).await.unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn get_issue_success() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue = fake_issue(100, 1, 1);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let resp = handler::get_issue(&core, GetIssueRequest { slug: "TP-1".into() }).await.unwrap();
+        assert_eq!(resp.number, 1);
+        assert_eq!(resp.project_slug, "myapp");
+    }
+
+    #[tokio::test]
+    async fn update_issue_title_success() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue = fake_issue(100, 1, 1);
+        let updated_issue = {
+            let mut i = issue.clone();
+            i.title = "Updated title".into();
+            i
+        };
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_id().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_find_by_slug().returning(move |_, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(Some(i)) })
+            });
+        }
+        {
+            let u = updated_issue.clone();
+            issue_repo.expect_update().returning(move |_, _| {
+                let u = u.clone();
+                Box::pin(async move { Ok(u) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let resp = handler::update_issue(
+            &core,
+            UpdateIssueRequest {
+                slug: "TP-1".into(),
+                title: Some("Updated title".into()),
+                description: None,
+                priority: None,
+                size: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.title, "Updated title");
+    }
+
+    #[tokio::test]
+    async fn list_issues_success() {
+        let project = fake_project(1, "myapp", "MA");
+        let issue = fake_issue(100, 1, 1);
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_list().returning(move |_, _, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(vec![i]) })
+            });
+        }
+        let mut user_repo = MockUserRepository::new();
+        user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
+        use ib_core::repository::testing::default_repository_service_builder;
+        let repo_svc = std::sync::Arc::new(
+            default_repository_service_builder()
+                .user_repository(std::sync::Arc::new(user_repo))
+                .api_key_repository(std::sync::Arc::new(MockApiKeyRepository::new()))
+                .project_repository(std::sync::Arc::new(project_repo))
+                .issue_repository(std::sync::Arc::new(issue_repo))
+                .relationship_repository(std::sync::Arc::new(empty_relationship_repo()))
+                .build()
+                .unwrap(),
+        );
+        let core = ib_core::create_services(repo_svc);
+        let resp = handler::list_issues(
+            &core,
+            ListIssuesRequest {
+                project_slug: "myapp".into(),
+                status: None,
+                priority: None,
+                size: None,
+                limit: None,
+                exclude_blocked: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.issues.len(), 1);
+        assert_eq!(resp.issues[0].number, 1);
     }
 }

@@ -544,12 +544,58 @@ mod tests {
 
     use ib_core::{
         CoreServices,
-        api_key::{ApiKey, MockApiKeyRepository},
+        api_key::{ApiKey, MockApiKeyRepository, sha256_hex},
         create_services,
+        project::MockProjectMemberRepository,
         user::MockUserRepository,
     };
 
     use super::GrpcAdminService;
+
+    pub(crate) const TEST_API_KEY: &str = "test-api-key-nonmember";
+
+    pub(crate) fn fake_non_admin_user(id: u64) -> ib_core::user::User {
+        use chrono::Utc;
+        ib_core::user::User {
+            id,
+            token: ib_core::user::UserToken::new(id),
+            username: "non_admin".to_owned(),
+            full_name: "Non Admin".to_owned(),
+            password_hash: "hash".to_owned(),
+            email_address: "non_admin@example.com".to_owned(),
+            capabilities: ib_core::types::Capabilities::default(),
+            change_password_on_login: false,
+            version: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    pub(crate) fn fake_api_key_for_user(user_id: u64) -> ApiKey {
+        use chrono::Utc;
+        ApiKey {
+            id: 1,
+            user_id,
+            key_type: "ib_live".to_owned(),
+            key_hash: sha256_hex(TEST_API_KEY),
+            key_prefix: "ib_live_XXXX".to_owned(),
+            name: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+        }
+    }
+
+    pub(crate) fn make_request_with_api_key<T>(body: T) -> tonic::Request<T> {
+        let mut req = tonic::Request::new(body);
+        req.metadata_mut().insert("x-api-key", TEST_API_KEY.parse().unwrap());
+        req
+    }
+
+    pub(crate) fn no_member_repo() -> MockProjectMemberRepository {
+        let mut r = MockProjectMemberRepository::new();
+        r.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
+        r
+    }
 
     pub(crate) fn make_core_services(user_repo: MockUserRepository, api_key_repo: MockApiKeyRepository) -> Arc<CoreServices> {
         use ib_core::repository::testing::default_repository_service_builder;
