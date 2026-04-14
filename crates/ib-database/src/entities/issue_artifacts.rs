@@ -1,7 +1,5 @@
-use std::str::FromStr;
-
 use chrono::Utc;
-use ib_core::artifact::model::{ArtifactKind, ArtifactToken, IssueArtifact};
+use ib_core::artifact::model::ArtifactToken;
 use sea_orm::{ActiveValue::Set, entity::prelude::*};
 
 #[sea_orm::model]
@@ -43,21 +41,5 @@ impl ActiveModelBehavior for ActiveModel {
             self.updated_at = Set(Utc::now().into());
         }
         Ok(self)
-    }
-}
-
-impl From<Model> for IssueArtifact {
-    fn from(m: Model) -> Self {
-        IssueArtifact {
-            id: m.id as u64,
-            token: ArtifactToken::from_str(&m.token).expect("valid token in DB"),
-            issue_id: m.issue_id as u64,
-            kind: ArtifactKind::from_str(&m.kind).expect("valid kind in DB"),
-            slug: m.slug,
-            body: serde_json::from_str(&m.body).expect("valid JSON in DB"),
-            created_by: m.created_by,
-            created_at: m.created_at.with_timezone(&chrono::Utc),
-            updated_at: m.updated_at.with_timezone(&chrono::Utc),
-        }
     }
 }

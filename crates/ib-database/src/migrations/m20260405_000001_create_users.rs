@@ -31,6 +31,9 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        // This project uses forward-only migrations. Rollback is not supported;
+        // down() is intentionally left as a no-op. To undo a migration, create
+        // a new migration that reverses the change.
         Ok(())
     }
 }

@@ -2,10 +2,9 @@ use chrono::Utc;
 use ib_core::{
     Error, RepositoryError,
     repository::Transaction,
-    types::Capabilities,
     user::{NewUser, User, UserId, UserToken, repository::UserRepository},
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, ModelTrait, PaginatorTrait, QueryFilter, QuerySelect, Set, sea_query::Expr};
 
 use crate::{
     entities::{
@@ -171,11 +170,13 @@ impl UserRepository for UserRepositoryAdapter {
     async fn any_super_admin(&self, transaction: &dyn Transaction) -> Result<bool, Error> {
         let transaction = TransactionImpl::get_db_transaction(transaction)?;
 
-        let users = UserEntity::find().all(transaction).await.map_err(handle_dberr)?;
-        Ok(users.into_iter().any(|m| {
-            let capabilities: Capabilities = serde_json::from_str(&m.capabilities).unwrap_or_default();
-            capabilities.is_super_admin()
-        }))
+        let count = UserEntity::find()
+            .filter(Expr::col(users::Column::Capabilities).like("%SuperAdmin%"))
+            .limit(1)
+            .count(transaction)
+            .await
+            .map_err(handle_dberr)?;
+        Ok(count > 0)
     }
 }
 

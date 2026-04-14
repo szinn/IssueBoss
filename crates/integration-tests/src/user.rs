@@ -29,3 +29,51 @@ async fn delete_user_removes_project_memberships() {
     let members = ctx.services.project_service().list_members(project.id).await.unwrap();
     assert!(members.is_empty(), "project memberships should be removed when user is deleted");
 }
+
+#[tokio::test]
+async fn find_by_username_returns_user() {
+    let ctx = setup().await;
+    let user = fixtures::create_user(&ctx.services, "charlie").await;
+
+    let found = ctx.services.user_service().find_by_username("charlie").await.unwrap();
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().id, user.id);
+}
+
+#[tokio::test]
+async fn find_by_username_returns_none_for_unknown() {
+    let ctx = setup().await;
+
+    let found = ctx.services.user_service().find_by_username("nobody").await.unwrap();
+    assert!(found.is_none());
+}
+
+#[tokio::test]
+async fn update_user_conflict_detected() {
+    let ctx = setup().await;
+    let user = fixtures::create_user(&ctx.services, "diana").await;
+
+    // Pass a User with a wrong version number to trigger the conflict check.
+    let mut wrong_version = user.clone();
+    wrong_version.version = 999;
+    wrong_version.full_name = "Diana Conflict".to_owned();
+
+    let err = ctx.services.user_service().update_user(wrong_version).await.unwrap_err();
+    assert!(
+        matches!(err, ib_core::Error::RepositoryError(ib_core::RepositoryError::Conflict)),
+        "expected Conflict, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn delete_user_returns_deleted_user() {
+    let ctx = setup().await;
+    let user = fixtures::create_user(&ctx.services, "eve").await;
+    let id = user.id;
+
+    let deleted = ctx.services.user_service().delete_user(id).await.unwrap();
+    assert_eq!(deleted.id, id);
+
+    let found = ctx.services.user_service().find_by_id(id).await.unwrap();
+    assert!(found.is_none());
+}

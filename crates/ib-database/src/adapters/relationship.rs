@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use ib_core::{
     Error,
     issue::IssueId,
@@ -10,6 +12,39 @@ use ib_core::{
 use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, Set, Statement};
 
 use crate::{entities::issue_relationships, handle_dberr, transaction::TransactionImpl};
+
+fn list_for_issue_sql(backend: sea_orm::DatabaseBackend, id: i64) -> (String, Vec<sea_orm::Value>) {
+    let params: Vec<sea_orm::Value> = vec![id.into(), id.into(), id.into(), id.into()];
+    let sql = match backend {
+        sea_orm::DatabaseBackend::Postgres => {
+            "SELECT i.id, i.slug, i.title, 'from' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = $1 AND \
+             r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'to' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id \
+             WHERE r.to_issue_id = $2 AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS direction FROM issue_relationships r JOIN \
+             issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = $3 AND r.kind = 'RelatedTo' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS \
+             direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id WHERE r.to_issue_id = $4 AND r.kind = 'RelatedTo'"
+        }
+        _ => {
+            "SELECT i.id, i.slug, i.title, 'from' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = ? AND \
+             r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'to' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id \
+             WHERE r.to_issue_id = ? AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS direction FROM issue_relationships r JOIN \
+             issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = ? AND r.kind = 'RelatedTo' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS \
+             direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id WHERE r.to_issue_id = ? AND r.kind = 'RelatedTo'"
+        }
+    };
+    (sql.to_owned(), params)
+}
+
+impl From<issue_relationships::Model> for IssueRelationship {
+    fn from(m: issue_relationships::Model) -> Self {
+        IssueRelationship {
+            id: m.id,
+            from_issue_id: m.from_issue_id as u64,
+            to_issue_id: m.to_issue_id as u64,
+            kind: RelationshipKind::from_str(&m.kind).expect("valid kind in DB"),
+            created_at: m.created_at.with_timezone(&chrono::Utc),
+        }
+    }
+}
 
 pub(crate) struct IssueRelationshipRepositoryAdapter;
 
@@ -77,27 +112,7 @@ impl IssueRelationshipRepository for IssueRelationshipRepositoryAdapter {
         let backend = db.get_database_backend();
 
         // Kind values must match RelationshipKind::Display ("DependsOn", "RelatedTo").
-        let (sql, values) = match backend {
-            sea_orm::DatabaseBackend::Postgres => (
-                "SELECT i.id, i.slug, i.title, 'from' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = \
-                 $1 AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'to' AS direction FROM issue_relationships r JOIN issues i ON i.id = \
-                 r.from_issue_id WHERE r.to_issue_id = $2 AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS direction FROM \
-                 issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = $3 AND r.kind = 'RelatedTo' UNION ALL SELECT i.id, \
-                 i.slug, i.title, 'related' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id WHERE r.to_issue_id = $4 AND \
-                 r.kind = 'RelatedTo'",
-                vec![id.into(), id.into(), id.into(), id.into()],
-            ),
-            _ => (
-                "SELECT i.id, i.slug, i.title, 'from' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = ? \
-                 AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'to' AS direction FROM issue_relationships r JOIN issues i ON i.id = \
-                 r.from_issue_id WHERE r.to_issue_id = ? AND r.kind = 'DependsOn' UNION ALL SELECT i.id, i.slug, i.title, 'related' AS direction FROM \
-                 issue_relationships r JOIN issues i ON i.id = r.to_issue_id WHERE r.from_issue_id = ? AND r.kind = 'RelatedTo' UNION ALL SELECT i.id, \
-                 i.slug, i.title, 'related' AS direction FROM issue_relationships r JOIN issues i ON i.id = r.from_issue_id WHERE r.to_issue_id = ? AND \
-                 r.kind = 'RelatedTo'",
-                vec![id.into(), id.into(), id.into(), id.into()],
-            ),
-        };
-
+        let (sql, values) = list_for_issue_sql(backend, id);
         let stmt = Statement::from_sql_and_values(backend, sql, values);
         let rows = RelatedIssueSummaryRow::find_by_statement(stmt).all(db).await.map_err(handle_dberr)?;
 

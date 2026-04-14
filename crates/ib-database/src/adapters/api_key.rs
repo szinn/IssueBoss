@@ -105,9 +105,11 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
             .await
             .map_err(handle_dberr)?;
         let keys: Vec<ApiKey> = existing.iter().cloned().map(Into::into).collect();
-        for model in existing {
-            model.delete(transaction).await.map_err(handle_dberr)?;
-        }
+        ApiKeyEntity::delete_many()
+            .filter(api_keys::Column::UserId.eq(user_id as i64))
+            .exec(transaction)
+            .await
+            .map_err(handle_dberr)?;
         Ok(keys)
     }
 

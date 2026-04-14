@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use ib_core::{
     Error,
     artifact::{
@@ -14,6 +16,35 @@ use crate::{
     handle_dberr,
     transaction::TransactionImpl,
 };
+
+fn artifact_json_path_sql(backend: sea_orm::DatabaseBackend) -> &'static str {
+    match backend {
+        sea_orm::DatabaseBackend::Sqlite => {
+            "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE json_extract(body, '$.path') = ?"
+        }
+        sea_orm::DatabaseBackend::MySql => {
+            "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE JSON_UNQUOTE(JSON_EXTRACT(body, \
+             '$.path')) = ?"
+        }
+        _ => "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE body::jsonb->>'path' = $1",
+    }
+}
+
+impl From<issue_artifacts::Model> for IssueArtifact {
+    fn from(m: issue_artifacts::Model) -> Self {
+        IssueArtifact {
+            id: m.id as u64,
+            token: ArtifactToken::from_str(&m.token).expect("valid token in DB"),
+            issue_id: m.issue_id as u64,
+            kind: ArtifactKind::from_str(&m.kind).expect("valid kind in DB"),
+            slug: m.slug,
+            body: serde_json::from_str(&m.body).expect("valid JSON in DB"),
+            created_by: m.created_by,
+            created_at: m.created_at.with_timezone(&chrono::Utc),
+            updated_at: m.updated_at.with_timezone(&chrono::Utc),
+        }
+    }
+}
 
 pub(crate) struct ArtifactRepositoryAdapter;
 
@@ -72,16 +103,7 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
     async fn find_by_path(&self, transaction: &dyn Transaction, path: &str) -> Result<Vec<IssueArtifact>, Error> {
         let db = TransactionImpl::get_db_transaction(transaction)?;
         let backend = db.get_database_backend();
-        let sql = match backend {
-            sea_orm::DatabaseBackend::Sqlite => {
-                "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE json_extract(body, '$.path') = ?"
-            }
-            sea_orm::DatabaseBackend::MySql => {
-                "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE JSON_UNQUOTE(JSON_EXTRACT(body, \
-                 '$.path')) = ?"
-            }
-            _ => "SELECT id, token, issue_id, kind, slug, body, created_by, created_at, updated_at FROM issue_artifacts WHERE body::jsonb->>'path' = $1",
-        };
+        let sql = artifact_json_path_sql(backend);
         let stmt = Statement::from_sql_and_values(backend, sql, [sea_orm::Value::String(Some(path.to_owned()))]);
         let rows = issue_artifacts::Model::find_by_statement(stmt).all(db).await.map_err(handle_dberr)?;
         Ok(rows.into_iter().map(Into::into).collect())
