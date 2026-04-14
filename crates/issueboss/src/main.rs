@@ -4,6 +4,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod commands;
 mod config;
+mod display;
 mod logging;
 
 #[cfg(feature = "server")]
@@ -49,19 +50,5 @@ async fn main() -> anyhow::Result<()> {
             use crate::commands::api_key::cmd_api_key;
             cmd_api_key(&cli.host, cli.port, args).await
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::config::Config;
-
-    #[test]
-    fn server_config_requires_database_url() {
-        // Config::load() must fail without database_url — confirming it is
-        // server-only config that must not be called for gRPC client commands.
-        // SAFETY: single-threaded test process; no other threads read this var.
-        unsafe { std::env::remove_var("ISSUEBOSS__DATABASE_URL") };
-        assert!(Config::load().is_err());
     }
 }

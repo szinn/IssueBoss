@@ -1,5 +1,7 @@
 use ib_api::grpc::admin::super_admin;
 
+use crate::display;
+
 #[derive(Debug, clap::Args)]
 pub(crate) struct SuperAdminArgs {
     /// Username for the SuperAdmin account
@@ -24,11 +26,6 @@ pub(crate) async fn cmd_super_admin(host: &str, port: u16, args: SuperAdminArgs)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    println!("\nSuperAdmin user created.\n");
-    println!("  Username: {}", response.username);
-    println!("  Email:    {}", response.email);
-    println!("  API key:  {}", response.api_key);
-    println!("\nStore this key securely — it will not be shown again.");
-    println!("Set it as ISSUEBOSS_API_KEY to use the admin CLI.");
+    print!("{}", display::format_super_admin(&response));
     Ok(())
 }

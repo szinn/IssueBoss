@@ -1,4 +1,6 @@
-use ib_api::grpc::{admin::issue, admin_proto::IssueResponse};
+use ib_api::grpc::admin::issue;
+
+use crate::display;
 
 // ── Args ─────────────────────────────────────────────────────────────────────
 
@@ -114,7 +116,7 @@ async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<(
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_issue(&i);
+    print!("{}", display::format_issue(&i));
     Ok(())
 }
 
@@ -131,28 +133,13 @@ async fn cmd_list(host: &str, port: u16, args: ListArgs) -> anyhow::Result<()> {
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if resp.issues.is_empty() {
-        println!("No issues.");
-        return Ok(());
-    }
-    println!("{:<10} {:<12} {:<10} {:<8} TITLE", "REF", "STATUS", "PRIORITY", "SIZE");
-    println!("{}", "-".repeat(80));
-    for i in resp.issues {
-        println!(
-            "{:<10} {:<12} {:<10} {:<8} {}",
-            i.slug,
-            i.status,
-            i.priority,
-            i.size.as_deref().unwrap_or("-"),
-            i.title,
-        );
-    }
+    print!("{}", display::format_issue_list(&resp.issues));
     Ok(())
 }
 
 async fn cmd_get(host: &str, port: u16, args: GetArgs) -> anyhow::Result<()> {
     let i = issue::api::get_issue(host, port, &args.issue).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_issue(&i);
+    print!("{}", display::format_issue(&i));
     Ok(())
 }
 
@@ -171,7 +158,7 @@ async fn cmd_update(host: &str, port: u16, args: UpdateArgs) -> anyhow::Result<(
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_issue(&i);
+    print!("{}", display::format_issue(&i));
     Ok(())
 }
 
@@ -179,23 +166,6 @@ async fn cmd_transition(host: &str, port: u16, args: TransitionArgs) -> anyhow::
     let i = issue::api::transition_issue(host, port, &args.issue, &args.status)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_issue(&i);
+    print!("{}", display::format_issue(&i));
     Ok(())
-}
-
-// ── Output helpers
-// ────────────────────────────────────────────────────────────
-
-fn print_issue(i: &IssueResponse) {
-    println!("Reference:   {}", i.slug);
-    println!("Token:       {}", i.token);
-    println!("Title:       {}", i.title);
-    println!("Status:      {}", i.status);
-    println!("Priority:    {}", i.priority);
-    println!("Size:        {}", i.size.as_deref().unwrap_or("-"));
-    if !i.description.is_empty() {
-        println!("Description: {}", i.description);
-    }
-    println!("Created:     {}", i.created_at);
-    println!("Updated:     {}", i.updated_at);
 }

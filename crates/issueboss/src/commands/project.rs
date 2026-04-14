@@ -3,6 +3,8 @@ use ib_api::grpc::{
     admin_proto::{ProjectMemberResponse, ProjectResponse},
 };
 
+use crate::display;
+
 // ── Args ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, clap::Args)]
@@ -129,15 +131,7 @@ async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<(
 
 async fn cmd_list(host: &str, port: u16) -> anyhow::Result<()> {
     let resp = project::api::list_projects(host, port).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    if resp.projects.is_empty() {
-        println!("No projects.");
-        return Ok(());
-    }
-    println!("{:<15} {:<25} {:<8} TOKEN", "SLUG", "NAME", "PREFIX");
-    println!("{}", "-".repeat(80));
-    for p in resp.projects {
-        println!("{:<15} {:<25} {:<8} {}", p.slug, p.name, p.prefix, p.token);
-    }
+    print!("{}", display::format_project_list(&resp.projects));
     Ok(())
 }
 
@@ -194,15 +188,7 @@ async fn cmd_list_members(host: &str, port: u16, args: ListMembersArgs) -> anyho
     let resp = project::api::list_project_members(host, port, &args.project)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if resp.members.is_empty() {
-        println!("No members.");
-        return Ok(());
-    }
-    println!("{:<20} CAPABILITIES", "USERNAME");
-    println!("{}", "-".repeat(50));
-    for m in resp.members {
-        println!("{:<20} {}", m.username, m.capabilities.join(", "));
-    }
+    print!("{}", display::format_project_member_list(&resp.members));
     Ok(())
 }
 
@@ -210,22 +196,9 @@ async fn cmd_list_members(host: &str, port: u16, args: ListMembersArgs) -> anyho
 // ────────────────────────────────────────────────────────────
 
 fn print_project(p: &ProjectResponse) {
-    println!("Token:    {}", p.token);
-    println!("Name:     {}", p.name);
-    println!("Slug:     {}", p.slug);
-    println!("Prefix:   {}", p.prefix);
-    if let Some(desc) = &p.description {
-        println!("Desc:     {desc}");
-    }
-    println!("Created:  {}", p.created_at);
-    println!("Updated:  {}", p.updated_at);
+    print!("{}", display::format_project(p));
 }
 
 fn print_member(m: &ProjectMemberResponse) {
-    println!("Project:  {}", m.project_token);
-    println!("User:     {}", m.username);
-    println!("Token:    {}", m.user_token);
-    println!("Caps:     {}", m.capabilities.join(", "));
-    println!("Created:  {}", m.created_at);
-    println!("Updated:  {}", m.updated_at);
+    print!("{}", display::format_project_member(m));
 }

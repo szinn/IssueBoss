@@ -1,5 +1,7 @@
 use ib_api::grpc::{admin::user, admin_proto::UserResponse};
 
+use crate::display;
+
 // ── Args ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, clap::Args)]
@@ -80,15 +82,7 @@ async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<(
 
 async fn cmd_list(host: &str, port: u16) -> anyhow::Result<()> {
     let users = user::api::list_users(host, port).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    if users.is_empty() {
-        println!("No users.");
-        return Ok(());
-    }
-    println!("{:<20} {:<25} {:<30} CAPABILITIES", "USERNAME", "FULL NAME", "EMAIL");
-    println!("{}", "-".repeat(90));
-    for u in users {
-        println!("{:<20} {:<25} {:<30} {}", u.username, u.full_name, u.email, u.capabilities.join(", "));
-    }
+    print!("{}", display::format_user_list(&users));
     Ok(())
 }
 
@@ -119,11 +113,5 @@ async fn cmd_delete(host: &str, port: u16, args: DeleteArgs) -> anyhow::Result<(
 // ─────────────────────────────────────────────────────────────
 
 fn print_user(u: &UserResponse) {
-    println!("Username:   {}", u.username);
-    println!("Full name:  {}", u.full_name);
-    println!("Email:      {}", u.email);
-    println!("Token:      {}", u.token);
-    println!("Caps:       {}", u.capabilities.join(", "));
-    println!("Created:    {}", u.created_at);
-    println!("Updated:    {}", u.updated_at);
+    print!("{}", display::format_user(u));
 }

@@ -1,7 +1,10 @@
+#[cfg(feature = "server")]
 use anyhow::Result;
+#[cfg(feature = "server")]
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[cfg(feature = "server")]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub http_port: u16,
     pub mcp_port: u16,
@@ -9,6 +12,7 @@ pub struct Config {
     pub database_url: String,
 }
 
+#[cfg(feature = "server")]
 impl Config {
     pub fn load() -> Result<Self> {
         let cfg = config::Config::builder()
@@ -18,5 +22,48 @@ impl Config {
             .add_source(config::Environment::with_prefix("ISSUEBOSS").separator("__"))
             .build()?;
         Ok(cfg.try_deserialize()?)
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn loads_defaults_when_database_url_set() {
+        unsafe {
+            std::env::set_var("ISSUEBOSS__DATABASE_URL", "postgres://localhost/test");
+            std::env::remove_var("ISSUEBOSS__HTTP_PORT");
+            std::env::remove_var("ISSUEBOSS__MCP_PORT");
+            std::env::remove_var("ISSUEBOSS__GRPC_PORT");
+        }
+        let cfg = Config::load().expect("should load with database_url set");
+        assert_eq!(cfg.http_port, 8080);
+        assert_eq!(cfg.mcp_port, 8090);
+        assert_eq!(cfg.grpc_port, 9090);
+        assert_eq!(cfg.database_url, "postgres://localhost/test");
+    }
+
+    #[test]
+    fn fails_without_database_url() {
+        unsafe { std::env::remove_var("ISSUEBOSS__DATABASE_URL") };
+        assert!(Config::load().is_err(), "must fail without database_url");
+    }
+
+    #[test]
+    fn overrides_default_ports_via_env() {
+        unsafe {
+            std::env::set_var("ISSUEBOSS__DATABASE_URL", "sqlite://:memory:");
+            std::env::set_var("ISSUEBOSS__HTTP_PORT", "9001");
+            std::env::set_var("ISSUEBOSS__GRPC_PORT", "9999");
+        }
+        let cfg = Config::load().expect("should load");
+        assert_eq!(cfg.http_port, 9001);
+        assert_eq!(cfg.grpc_port, 9999);
+        unsafe {
+            std::env::remove_var("ISSUEBOSS__HTTP_PORT");
+            std::env::remove_var("ISSUEBOSS__GRPC_PORT");
+            std::env::remove_var("ISSUEBOSS__DATABASE_URL");
+        }
     }
 }

@@ -1,7 +1,6 @@
-use ib_api::grpc::{
-    admin::relationship,
-    admin_proto::{IssueRelationshipsProto, RelationshipResponse},
-};
+use ib_api::grpc::admin::relationship;
+
+use crate::display;
 
 // ── Args ─────────────────────────────────────────────────────────────────────
 
@@ -70,7 +69,7 @@ async fn cmd_add(host: &str, port: u16, args: AddArgs) -> anyhow::Result<()> {
     let r = relationship::api::add_relationship(host, port, &args.from, &args.to, &args.kind)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    print_relationship(&r);
+    print!("{}", display::format_relationship(&r));
     Ok(())
 }
 
@@ -91,36 +90,7 @@ async fn cmd_list(host: &str, port: u16, args: ListArgs) -> anyhow::Result<()> {
         Some(rels) if rels.depends_on.is_empty() && rels.blocks.is_empty() && rels.related_to.is_empty() => {
             println!("No relationships.");
         }
-        Some(rels) => print_relationships(&rels),
+        Some(rels) => print!("{}", display::format_relationships(&rels)),
     }
     Ok(())
-}
-
-// ── Output helpers ───────────────────────────────────────────────────────────
-
-fn print_relationship(r: &RelationshipResponse) {
-    println!("From: {}", r.from_slug);
-    println!("To:   {}", r.to_slug);
-    println!("Kind: {}", r.kind);
-}
-
-fn print_relationships(rels: &IssueRelationshipsProto) {
-    if !rels.depends_on.is_empty() {
-        println!("Depends on:");
-        for r in &rels.depends_on {
-            println!("  {} — {}", r.slug, r.title);
-        }
-    }
-    if !rels.blocks.is_empty() {
-        println!("Blocks:");
-        for r in &rels.blocks {
-            println!("  {} — {}", r.slug, r.title);
-        }
-    }
-    if !rels.related_to.is_empty() {
-        println!("Related to:");
-        for r in &rels.related_to {
-            println!("  {} — {}", r.slug, r.title);
-        }
-    }
 }

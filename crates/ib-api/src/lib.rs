@@ -5,6 +5,7 @@ mod mcp;
 
 use std::sync::Arc;
 
+pub use grpc::admin::api::{connect, with_api_key};
 use ib_core::{CoreServices, Error};
 pub use mcp::create_mcp_router;
 use tokio_graceful_shutdown::{IntoSubsystem, SubsystemBuilder, SubsystemHandle};

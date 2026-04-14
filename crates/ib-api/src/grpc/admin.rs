@@ -520,7 +520,15 @@ pub mod api {
         ))
     }
 
-    pub(crate) fn with_api_key<T>(mut req: tonic::Request<T>) -> tonic::Request<T> {
+    /// Connect to the gRPC admin service.
+    ///
+    /// Returns a client ready for use. Prefer caching the returned client
+    /// across multiple calls within one command invocation.
+    pub async fn connect(host: &str, port: u16) -> Result<AdminServiceClient<tonic::transport::Channel>, Error> {
+        make_client(host, port).await
+    }
+
+    pub fn with_api_key<T>(mut req: tonic::Request<T>) -> tonic::Request<T> {
         if let Ok(key) = std::env::var("ISSUEBOSS_API_KEY") {
             if let Ok(val) = key.parse() {
                 req.metadata_mut().insert("x-api-key", val);

@@ -1,5 +1,7 @@
 use ib_api::grpc::admin::api_key;
 
+use crate::display;
+
 // ── Args ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, clap::Args)]
@@ -57,12 +59,7 @@ async fn cmd_create(host: &str, port: u16, args: CreateArgs) -> anyhow::Result<(
     let resp = api_key::api::create_api_key(host, port, &args.username, &args.key_type, &args.name)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("\nAPI key created for: {}", resp.username);
-    println!("  Type:    {}", resp.key_type);
-    println!("  Prefix:  {}", resp.key_prefix);
-    println!("  ID:      {}", resp.api_key_id);
-    println!("  API key: {}", resp.api_key);
-    println!("\nStore this key securely — it will not be shown again.");
+    print!("{}", display::format_api_key_created(&resp));
     Ok(())
 }
 
@@ -78,15 +75,6 @@ async fn cmd_list(host: &str, port: u16, args: ListArgs) -> anyhow::Result<()> {
     let resp = api_key::api::list_api_keys(host, port, &args.username)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if resp.keys.is_empty() {
-        println!("No API keys for {}.", args.username);
-        return Ok(());
-    }
-    println!("{:<20} {:<12} {:<20} {:<25} LAST USED", "ID", "TYPE", "PREFIX", "NAME");
-    println!("{}", "-".repeat(100));
-    for k in resp.keys {
-        let last = if k.last_used_at.is_empty() { "-".to_owned() } else { k.last_used_at };
-        println!("{:<20} {:<12} {:<20} {:<25} {}", k.api_key_id, k.key_type, k.key_prefix, k.name, last);
-    }
+    print!("{}", display::format_api_key_list(&args.username, &resp.keys));
     Ok(())
 }
