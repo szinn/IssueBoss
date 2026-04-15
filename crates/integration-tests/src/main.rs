@@ -1,3 +1,5 @@
+use crate::context::TestContext;
+
 mod api_key;
 mod artifact;
 mod context;
@@ -12,18 +14,20 @@ mod user;
 
 #[cfg(feature = "postgres")]
 mod postgres;
-
-#[cfg(feature = "sqlite")]
-mod sqlite;
-
-// Priority: postgres > mysql > sqlite when multiple features are enabled.
-#[cfg(feature = "postgres")]
-pub(crate) use postgres::setup;
 #[cfg(all(feature = "sqlite", not(feature = "postgres")))]
-pub(crate) use sqlite::setup;
+mod sqlite;
 
 #[cfg(not(any(feature = "postgres", feature = "sqlite")))]
 compile_error!("At least one database backend feature must be enabled: postgres, sqlite");
+
+pub(crate) async fn setup() -> TestContext {
+    #[cfg(feature = "postgres")]
+    return postgres::setup().await;
+    #[cfg(all(feature = "sqlite", not(feature = "postgres")))]
+    return sqlite::setup().await;
+    #[cfg(not(any(feature = "postgres", feature = "sqlite")))]
+    unreachable!()
+}
 
 #[tokio::test]
 async fn test_setup() {
