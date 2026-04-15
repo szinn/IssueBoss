@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/ib-utils",
-    "crates/ib-core",
-    "crates/ib-database",
-    "crates/ib-api",
-    "crates/ib-frontend",
+    "crates/utils",
+    "crates/core",
+    "crates/database",
+    "crates/api",
+    "crates/frontend",
     "crates/issueboss",
     "crates/insights",
     "crates/integration-tests",
@@ -23,11 +23,11 @@ license = "MIT"
 [workspace.dependencies]
 
 # Internal crates
-ib-api = { path = "crates/ib-api" }
-ib-core = { path = "crates/ib-core" }
-ib-database = { path = "crates/ib-database" }
-ib-frontend = { path = "crates/ib-frontend" }
-ib-utils = { path = "crates/ib-utils" }
+ib-api = { path = "crates/api" }
+ib-core = { path = "crates/core" }
+ib-database = { path = "crates/database" }
+ib-frontend = { path = "crates/frontend" }
+ib-utils = { path = "crates/utils" }
 
 # Error handling
 anyhow = "1.0.102"
