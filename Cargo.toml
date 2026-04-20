@@ -48,7 +48,7 @@ config = "0.15.22"
 # Utility
 chrono = { version = "0.4.44", features = ["serde"] }
 derive_builder = "0.20.2"
-mimalloc = "0.1.48"
+mimalloc = "0.1.49"
 
 # Logging
 log = "0.4.29"
