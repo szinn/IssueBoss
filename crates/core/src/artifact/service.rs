@@ -50,31 +50,31 @@ impl ArtifactService for ArtifactServiceImpl {
                 Some(slug)
             }
         };
-        validate_body(&new_artifact.kind, &new_artifact.body)?;
+        validate_body(&new_artifact.kind, &mut new_artifact.body)?;
         with_transaction!(self, artifact_repository, |tx| artifact_repository.create(tx, new_artifact).await)
     }
 
-    async fn update_artifact(&self, issue_id: IssueId, slug: &str, body: Value) -> Result<IssueArtifact, Error> {
+    async fn update_artifact(&self, issue_id: IssueId, slug: &str, mut body: Value) -> Result<IssueArtifact, Error> {
         let slug = slug.to_owned();
         with_transaction!(self, artifact_repository, |tx| {
             let mut artifact = artifact_repository
                 .find_by_slug(tx, issue_id, &slug)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            validate_artifact_update(&artifact, &body)?;
+            validate_artifact_update(&artifact, &mut body)?;
             artifact.body = body;
             artifact_repository.update(tx, artifact).await
         })
     }
 
-    async fn update_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId, body: Value) -> Result<IssueArtifact, Error> {
+    async fn update_artifact_by_id(&self, issue_id: IssueId, artifact_id: ArtifactId, mut body: Value) -> Result<IssueArtifact, Error> {
         with_transaction!(self, artifact_repository, |tx| {
             let mut artifact = artifact_repository
                 .find_by_id(tx, artifact_id)
                 .await?
                 .filter(|a| a.issue_id == issue_id)
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            validate_artifact_update(&artifact, &body)?;
+            validate_artifact_update(&artifact, &mut body)?;
             artifact.body = body;
             artifact_repository.update(tx, artifact).await
         })
@@ -153,10 +153,11 @@ impl ArtifactService for ArtifactServiceImpl {
     }
 }
 
-fn validate_artifact_update(artifact: &IssueArtifact, body: &Value) -> Result<(), Error> {
+fn validate_artifact_update(artifact: &IssueArtifact, body: &mut Value) -> Result<(), Error> {
     if artifact.kind == ArtifactKind::StatusTransition {
         return Err(Error::Validation("StatusTransition artifacts are immutable".into()));
     }
+    validate_body(&artifact.kind, body)?;
     if is_file_backed(&artifact.kind) {
         let old_path = artifact.body.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let new_path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
@@ -164,7 +165,7 @@ fn validate_artifact_update(artifact: &IssueArtifact, body: &Value) -> Result<()
             return Err(Error::Validation("file path is immutable after creation".into()));
         }
     }
-    validate_body(&artifact.kind, body)
+    Ok(())
 }
 
 fn is_file_backed(kind: &ArtifactKind) -> bool {
@@ -174,7 +175,16 @@ fn is_file_backed(kind: &ArtifactKind) -> bool {
     )
 }
 
-pub(crate) fn validate_body(kind: &ArtifactKind, body: &Value) -> Result<(), Error> {
+pub(crate) fn validate_body(kind: &ArtifactKind, body: &mut Value) -> Result<(), Error> {
+    if let Some(s) = body.as_str() {
+        let parsed: Value = serde_json::from_str(s).map_err(|_| Error::Validation(format!("{kind} body must be a JSON object")))?;
+        if !parsed.is_object() {
+            return Err(Error::Validation(format!("{kind} body must be a JSON object")));
+        }
+        *body = parsed;
+    } else if !body.is_object() && !matches!(kind, ArtifactKind::StatusTransition) {
+        return Err(Error::Validation(format!("{kind} body must be a JSON object")));
+    }
     match kind {
         ArtifactKind::TriageResult | ArtifactKind::Spec | ArtifactKind::Plan | ArtifactKind::Handoff => {
             if body.get("path").and_then(|v| v.as_str()).is_none() {
@@ -507,59 +517,116 @@ mod tests {
 
     #[test]
     fn validate_body_comment_requires_text() {
-        let result = validate_body(&ArtifactKind::Comment, &json!({"note": "oops"}));
+        let mut body = json!({"note": "oops"});
+        let result = validate_body(&ArtifactKind::Comment, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_comment_with_text_is_ok() {
-        assert!(validate_body(&ArtifactKind::Comment, &json!({"text": "hello"})).is_ok());
+        let mut body = json!({"text": "hello"});
+        assert!(validate_body(&ArtifactKind::Comment, &mut body).is_ok());
     }
 
     #[test]
     fn validate_body_research_missing_topic_token() {
-        let result = validate_body(&ArtifactKind::Research, &json!({"status": "completed", "path": "foo.md"}));
+        let mut body = json!({"status": "completed", "path": "foo.md"});
+        let result = validate_body(&ArtifactKind::Research, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_research_invalid_status() {
-        let result = validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "pending"}));
+        let mut body = json!({"topic_token": "T_1", "status": "pending"});
+        let result = validate_body(&ArtifactKind::Research, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_research_completed_requires_path() {
-        let result = validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "completed"}));
+        let mut body = json!({"topic_token": "T_1", "status": "completed"});
+        let result = validate_body(&ArtifactKind::Research, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_research_cancelled_no_path_required() {
-        assert!(validate_body(&ArtifactKind::Research, &json!({"topic_token": "T_1", "status": "cancelled"})).is_ok());
+        let mut body = json!({"topic_token": "T_1", "status": "cancelled"});
+        assert!(validate_body(&ArtifactKind::Research, &mut body).is_ok());
     }
 
     #[test]
     fn validate_body_research_topic_both_desc_and_path_rejected() {
-        let result = validate_body(&ArtifactKind::ResearchTopic, &json!({"description": "desc", "path": "foo.md"}));
+        let mut body = json!({"description": "desc", "path": "foo.md"});
+        let result = validate_body(&ArtifactKind::ResearchTopic, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_research_topic_neither_desc_nor_path_rejected() {
-        let result = validate_body(&ArtifactKind::ResearchTopic, &json!({}));
+        let mut body = json!({});
+        let result = validate_body(&ArtifactKind::ResearchTopic, &mut body);
         assert!(matches!(result, Err(Error::Validation(_))));
     }
 
     #[test]
     fn validate_body_research_topic_desc_only_ok() {
-        assert!(validate_body(&ArtifactKind::ResearchTopic, &json!({"description": "what is auth?"})).is_ok());
+        let mut body = json!({"description": "what is auth?"});
+        assert!(validate_body(&ArtifactKind::ResearchTopic, &mut body).is_ok());
     }
 
     #[test]
     fn validate_body_status_transition_always_ok() {
         // StatusTransition has no body validation
-        assert!(validate_body(&ArtifactKind::StatusTransition, &json!({})).is_ok());
+        let mut body = json!({});
+        assert!(validate_body(&ArtifactKind::StatusTransition, &mut body).is_ok());
+    }
+
+    // String-body coercion: MCP clients sometimes serialize object params as
+    // JSON-encoded strings; validate_body should parse and replace in place.
+
+    #[test]
+    fn validate_body_coerces_string_object_for_triage_result() {
+        let mut body = Value::String(r#"{"path":"foo.md"}"#.to_string());
+        assert!(validate_body(&ArtifactKind::TriageResult, &mut body).is_ok());
+        assert_eq!(body, json!({"path": "foo.md"}));
+    }
+
+    #[test]
+    fn validate_body_rejects_non_json_string() {
+        let mut body = Value::String("not json".to_string());
+        let result = validate_body(&ArtifactKind::TriageResult, &mut body);
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_rejects_string_that_parses_to_non_object() {
+        // valid JSON, but not an object
+        let mut body = Value::String("\"just a string\"".to_string());
+        let result = validate_body(&ArtifactKind::TriageResult, &mut body);
+        assert!(matches!(result, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn validate_body_coerces_string_object_for_research() {
+        let mut body = Value::String(r#"{"topic_token":"T_1","status":"completed","path":"r.md"}"#.to_string());
+        assert!(validate_body(&ArtifactKind::Research, &mut body).is_ok());
+        assert_eq!(body, json!({"topic_token": "T_1", "status": "completed", "path": "r.md"}));
+    }
+
+    #[test]
+    fn validate_body_coerces_string_object_for_comment() {
+        let mut body = Value::String(r#"{"text":"hi"}"#.to_string());
+        assert!(validate_body(&ArtifactKind::Comment, &mut body).is_ok());
+        assert_eq!(body, json!({"text": "hi"}));
+    }
+
+    #[test]
+    fn validate_body_leaves_object_unchanged() {
+        let mut body = json!({"path": "x.md"});
+        let original = body.clone();
+        assert!(validate_body(&ArtifactKind::TriageResult, &mut body).is_ok());
+        assert_eq!(body, original);
     }
 
     // update_artifact guards
@@ -652,5 +719,112 @@ mod tests {
         let svc = make_svc(repo);
         let result = svc.remove_artifact_by_id(10, 11).await;
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
+    }
+
+    // add_artifact string-body coercion: the persisted body must be the parsed
+    // object, not the raw JSON-encoded string.
+
+    fn mock_repo_echoing_create() -> MockArtifactRepository {
+        let mut repo = MockArtifactRepository::new();
+        repo.expect_create().returning(|_, record| {
+            let slug = record.slug.clone();
+            let kind = record.kind.clone();
+            let issue_id = record.issue_id;
+            let body = record.body.clone();
+            let created_by = record.created_by.clone();
+            Box::pin(async move {
+                Ok(IssueArtifact {
+                    id: 1,
+                    token: ArtifactToken::new(1),
+                    issue_id,
+                    kind,
+                    slug,
+                    body,
+                    created_by,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                })
+            })
+        });
+        repo
+    }
+
+    #[tokio::test]
+    async fn add_artifact_coerces_string_body_for_triage_result() {
+        let svc = make_svc(mock_repo_echoing_create());
+        let artifact = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::TriageResult,
+                slug: None,
+                body: Value::String(r#"{"path":"x.md"}"#.to_string()),
+                created_by: "U_1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(artifact.body, json!({"path": "x.md"}));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_coerces_string_body_for_research() {
+        let svc = make_svc(mock_repo_echoing_create());
+        let artifact = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Research,
+                slug: Some("topic-a".into()),
+                body: Value::String(r#"{"topic_token":"T_1","status":"completed","path":"r.md"}"#.to_string()),
+                created_by: "U_1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(artifact.body, json!({"topic_token": "T_1", "status": "completed", "path": "r.md"}));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_coerces_string_body_for_comment() {
+        let svc = make_svc(mock_repo_echoing_create());
+        let artifact = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::Comment,
+                slug: Some("note".into()),
+                body: Value::String(r#"{"text":"hi"}"#.to_string()),
+                created_by: "U_1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(artifact.body, json!({"text": "hi"}));
+    }
+
+    #[tokio::test]
+    async fn add_artifact_object_body_unchanged() {
+        let svc = make_svc(mock_repo_echoing_create());
+        let artifact = svc
+            .add_artifact(NewArtifact {
+                issue_id: 1,
+                kind: ArtifactKind::TriageResult,
+                slug: None,
+                body: json!({"path": "x.md"}),
+                created_by: "U_1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(artifact.body, json!({"path": "x.md"}));
+    }
+
+    #[tokio::test]
+    async fn update_artifact_coerces_string_body() {
+        let mut repo = MockArtifactRepository::new();
+        let existing = fake_artifact(20, 10, ArtifactKind::Comment, json!({"text": "old"}));
+        let a = existing.clone();
+        repo.expect_find_by_slug().returning(move |_, _, _| {
+            let a = a.clone();
+            Box::pin(async move { Ok(Some(a)) })
+        });
+        repo.expect_update().returning(|_, a| Box::pin(async move { Ok(a) }));
+        let svc = make_svc(repo);
+        let artifact = svc.update_artifact(10, "note", Value::String(r#"{"text":"new"}"#.to_string())).await.unwrap();
+        assert_eq!(artifact.body, json!({"text": "new"}));
     }
 }
