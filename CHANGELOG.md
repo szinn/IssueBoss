@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/szinn/IssueBoss/compare/v0.3.0..v0.3.1) - 2026-05-18
+
+### Bug Fixes
+
+- _(core)_ Coerce stringified JSON artifact bodies in add/update - ([a7decbc](https://github.com/szinn/IssueBoss/commit/a7decbc8103071a2b6a6047ccd4de71d07c6ea3d))
+
+### Refactor
+
+- _(crates)_ Rename paths to crates to remove ib- prefix - ([bb19dbb](https://github.com/szinn/IssueBoss/commit/bb19dbb27574d970dcfccfe9c68b5c546a40dc4d))
+- _(tests)_ Refactored main to have setup function - ([b171912](https://github.com/szinn/IssueBoss/commit/b171912b5cadbeab9b1519f4f8d6b8b3d48f199e))
+
 ## [0.3.0](https://github.com/szinn/IssueBoss/compare/v0.2.11..v0.3.0) - 2026-04-14
 
 ### Features
