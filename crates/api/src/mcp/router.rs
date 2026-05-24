@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use axum::{Router, middleware};
 use ib_core::CoreServices;
@@ -12,11 +12,9 @@ use crate::{
     mcp::server::IssueBossServer,
 };
 
-const MCP_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
-
 fn make_session_manager() -> LocalSessionManager {
     let mut manager = LocalSessionManager::default();
-    manager.session_config.keep_alive = Some(MCP_SESSION_IDLE_TIMEOUT);
+    manager.session_config.keep_alive = None;
     manager
 }
 
@@ -27,6 +25,11 @@ pub fn create_mcp_router(core_services: Arc<CoreServices>) -> Router {
             let user = CURRENT_MCP_USER
                 .try_with(|u| u.clone())
                 .map_err(|_| std::io::Error::other("no authenticated user in task context"))?;
+            tracing::info!(
+                user_id = user.id,
+                username = %user.username,
+                "mcp: creating new session server"
+            );
             Ok(IssueBossServer::new(core.clone(), user))
         },
         Arc::new(make_session_manager()),
@@ -42,9 +45,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_manager_uses_60_minute_idle_timeout() {
+    fn session_manager_has_no_idle_timeout() {
         let manager = make_session_manager();
-        assert_eq!(manager.session_config.keep_alive, Some(MCP_SESSION_IDLE_TIMEOUT),);
-        assert_eq!(MCP_SESSION_IDLE_TIMEOUT.as_secs(), 3600);
+        assert_eq!(manager.session_config.keep_alive, None);
     }
 }

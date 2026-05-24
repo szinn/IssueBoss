@@ -27,27 +27,52 @@ tokio::task_local! {
 /// Axum middleware that validates the `Authorization: Bearer <key>` header.
 /// Injects `AuthenticatedUser` into request extensions on success.
 pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>, mut req: Request, next: Next) -> Result<Response, StatusCode> {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let session_id = req.headers().get("mcp-session-id").and_then(|v| v.to_str().ok()).map(str::to_owned);
+    tracing::debug!(
+        method = %method,
+        uri = %uri,
+        session_id = session_id.as_deref().unwrap_or("<none>"),
+        "mcp: incoming request"
+    );
+
     let key = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .ok_or_else(|| {
+            tracing::warn!(%method, %uri, "mcp: rejecting request — missing or malformed Authorization header");
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let hash = sha256_hex(key);
     let api_key = core_services
         .api_key_service()
         .find_by_hash(&hash)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "mcp: api_key lookup failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!(%method, %uri, "mcp: rejecting request — unknown api key");
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let user = core_services
         .user_service()
         .find_by_id(api_key.user_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "mcp: user lookup failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!(%method, %uri, api_key.user_id, "mcp: rejecting request — api key references missing user");
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let svc = core_services.clone();
     let api_key_snapshot = api_key.clone();
@@ -55,12 +80,22 @@ pub async fn mcp_auth_middleware(State(core_services): State<Arc<CoreServices>>,
         let _ = svc.api_key_service().record_usage(api_key_snapshot).await;
     });
 
-    CURRENT_MCP_USER
+    let user_for_scope = user.clone();
+    let response = CURRENT_MCP_USER
         .scope(user.clone(), async move {
             req.extensions_mut().insert(AuthenticatedUser(user));
-            Ok(next.run(req).await)
+            next.run(req).await
         })
-        .await
+        .await;
+    tracing::debug!(
+        method = %method,
+        uri = %uri,
+        session_id = session_id.as_deref().unwrap_or("<none>"),
+        user_id = user_for_scope.id,
+        status = response.status().as_u16(),
+        "mcp: response"
+    );
+    Ok(response)
 }
 
 // ── gRPC auth helper ─────────────────────────────────────────────────────────
