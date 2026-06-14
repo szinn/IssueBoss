@@ -5,7 +5,7 @@
 "cargo:cargo-insta" = "1.43.1"
 "cargo:cargo-nextest" = "0.9.126"
 "cargo:mdbook" = "0.5.2"
-"colima" = "0.10.1"
+"colima" = "0.10.3"
 "git-cliff" = "2.13.1"
 "prettier" = "3.8.3"
 "protobuf" = "35.1"
