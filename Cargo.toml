@@ -51,7 +51,7 @@ derive_builder = "0.20.2"
 mimalloc = "0.1.52"
 
 # Logging
-log = "0.4.32"
+log = "0.4.33"
 tracing = { version = "0.1.44", features = ["log"] }
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = [
