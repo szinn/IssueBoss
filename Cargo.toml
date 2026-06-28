@@ -43,7 +43,7 @@ axum = "0.8.9"
 tower = "0.5.3"
 
 # Config
-config = "0.15.24"
+config = "0.15.25"
 
 # Utility
 chrono = { version = "0.4.45", features = ["serde"] }
