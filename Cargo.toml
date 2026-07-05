@@ -89,7 +89,7 @@ toml = "1.1.2"
 walkdir = "2.5.0"
 
 # Database
-sea-orm = { version = "2.0.0-rc.41", features = [
+sea-orm = { version = "2.0.0-rc.42", features = [
     "debug-print",
     "postgres-array",
     "runtime-tokio-rustls",
@@ -101,7 +101,7 @@ sea-orm = { version = "2.0.0-rc.41", features = [
     "with-rust_decimal",
     "with-uuid",
 ] }
-sea-orm-migration = { version = "2.0.0-rc.41", features = [
+sea-orm-migration = { version = "2.0.0-rc.42", features = [
     "sqlx-postgres",
     "sqlx-sqlite",
     "sqlx-mysql",
