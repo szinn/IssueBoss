@@ -12,8 +12,8 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        Annotated, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, RawResource, RawResourceTemplate, ReadResourceRequestParams,
-        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+        ResourceTemplate, ServerCapabilities, ServerInfo,
     },
     schemars, tool, tool_handler, tool_router,
 };
@@ -927,12 +927,11 @@ impl ServerHandler for IssueBossServer {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        Ok(ListResourcesResult::with_all_items(vec![Annotated::new(
-            RawResource::new("issueboss://projects", "Projects")
+        Ok(ListResourcesResult::with_all_items(vec![
+            Resource::new("issueboss://projects", "Projects")
                 .with_description("All projects the authenticated user is a member of")
                 .with_mime_type("application/json"),
-            None,
-        )]))
+        ]))
     }
 
     async fn list_resource_templates(
@@ -940,10 +939,9 @@ impl ServerHandler for IssueBossServer {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, McpError> {
-        Ok(ListResourceTemplatesResult::with_all_items(vec![Annotated::new(
-            RawResourceTemplate::new("issueboss://issues/{slug}", "Issue by Slug").with_description("A single issue by slug, e.g. IB-5"),
-            None,
-        )]))
+        Ok(ListResourceTemplatesResult::with_all_items(vec![
+            ResourceTemplate::new("issueboss://issues/{slug}", "Issue by Slug").with_description("A single issue by slug, e.g. IB-5"),
+        ]))
     }
 
     async fn read_resource(
