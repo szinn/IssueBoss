@@ -60,6 +60,16 @@ pub struct IssueSummaryMcp {
 }
 
 #[derive(Debug, serde::Serialize)]
+pub struct IssueSummaryRowMcp {
+    pub slug: String,
+    pub status: String,
+    pub priority: String,
+    pub size: Option<String>,
+    pub title: String,
+    pub assigned: Option<UserRefMcp>,
+}
+
+#[derive(Debug, serde::Serialize)]
 pub struct UserRefMcp {
     pub token: String,
     pub username: String,
@@ -148,7 +158,7 @@ impl From<ib_core::relationship::IssueRelationships> for IssueRelationshipsMcp {
 // Tool parameter structs
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListIssuesParams {
     /// Project slug, e.g. "issueboss"
     pub project_slug: String,
@@ -167,6 +177,9 @@ pub struct ListIssuesParams {
     pub submitted_by: Option<String>,
     /// Filter by assigned user token, e.g. "U_2"
     pub assigned_to: Option<String>,
+    /// When true, return compact summary rows (slug, status, priority, size,
+    /// title, assigned) instead of full issue objects. Defaults to false.
+    pub summary: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -400,6 +413,21 @@ async fn build_issue_summary_mcp(core: &Arc<CoreServices>, issue: ib_core::issue
     })
 }
 
+async fn build_issue_summary_row_mcp(core: &Arc<CoreServices>, issue: ib_core::issue::Issue) -> Result<IssueSummaryRowMcp, McpError> {
+    let assigned = match issue.assigned {
+        Some(id) => Some(resolve_user_ref(core, id).await?),
+        None => None,
+    };
+    Ok(IssueSummaryRowMcp {
+        slug: issue.slug,
+        status: issue.status.to_string(),
+        priority: issue.priority.to_string(),
+        size: issue.size.map(|s| s.to_string()),
+        title: issue.title,
+        assigned,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // IssueBossServer
 // ---------------------------------------------------------------------------
@@ -514,11 +542,19 @@ impl IssueBossServer {
 
         let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;
 
-        let mut summaries = Vec::with_capacity(issues.len());
-        for issue in issues {
-            summaries.push(build_issue_summary_mcp(&self.core, issue).await?);
+        if p.summary == Some(true) {
+            let mut rows = Vec::with_capacity(issues.len());
+            for issue in issues {
+                rows.push(build_issue_summary_row_mcp(&self.core, issue).await?);
+            }
+            serialize(&rows)
+        } else {
+            let mut summaries = Vec::with_capacity(issues.len());
+            for issue in issues {
+                summaries.push(build_issue_summary_mcp(&self.core, issue).await?);
+            }
+            serialize(&summaries)
         }
-        serialize(&summaries)
     }
 
     #[tool(
@@ -1202,6 +1238,7 @@ mod tests {
                 exclude_blocked: None,
                 submitted_by: None,
                 assigned_to: None,
+                summary: None,
             }))
             .await;
 
@@ -1209,6 +1246,51 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json.as_array().unwrap().len(), 1);
         assert_eq!(json[0]["slug"], "TP-1");
+    }
+
+    #[tokio::test]
+    async fn list_issues_summary_omits_body_and_timestamps() {
+        let project = fake_project(1, "myapp");
+        let issue = fake_issue(10, 1, 1);
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo.expect_list().returning(move |_, _, _| {
+                let i = i.clone();
+                Box::pin(async move { Ok(vec![i]) })
+            });
+        }
+
+        let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_issues(Parameters(ListIssuesParams {
+                project_slug: "myapp".to_string(),
+                summary: Some(true),
+                ..Default::default()
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let first = &json[0];
+        assert_eq!(first["slug"], "TP-1");
+        assert!(first.get("status").is_some());
+        assert!(first.get("assigned").is_some(), "assigned key present (null when unassigned)");
+        assert!(first.get("description").is_none(), "summary must omit description");
+        assert!(first.get("token").is_none(), "summary must omit token");
+        assert!(first.get("created_at").is_none(), "summary must omit timestamps");
+        assert!(first.get("submitter").is_none(), "summary row has no submitter");
     }
 
     #[tokio::test]
@@ -1230,6 +1312,7 @@ mod tests {
                 exclude_blocked: None,
                 submitted_by: None,
                 assigned_to: None,
+                summary: None,
             }))
             .await;
 
@@ -1262,6 +1345,7 @@ mod tests {
                 exclude_blocked: None,
                 submitted_by: None,
                 assigned_to: None,
+                summary: None,
             }))
             .await;
 
@@ -1305,6 +1389,7 @@ mod tests {
                 exclude_blocked: None,
                 submitted_by: None,
                 assigned_to: None,
+                summary: None,
             }))
             .await;
 
@@ -1361,6 +1446,7 @@ mod tests {
                 exclude_blocked: None,
                 submitted_by: None,
                 assigned_to: None,
+                summary: None,
             }))
             .await;
 
