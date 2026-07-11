@@ -4,7 +4,7 @@ use ib_core::{
     project::ProjectId,
     repository::Transaction,
 };
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set, sea_query::Expr};
+use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, sea_query::Expr};
 
 use crate::{
     entities::{issues, prelude},
@@ -124,9 +124,6 @@ impl IssueRepository for IssueRepositoryAdapter {
         if let Some(size) = filter.size {
             query = query.filter(issues::Column::Size.eq(size.to_string()));
         }
-        if let Some(limit) = filter.limit {
-            query = query.limit(limit);
-        }
         if filter.exclude_blocked == Some(true) {
             query = query.filter(Expr::cust(
                 "NOT EXISTS (SELECT 1 FROM issue_relationships ir INNER JOIN issues blocker ON blocker.id = ir.to_issue_id WHERE ir.from_issue_id = issues.id \
@@ -153,6 +150,13 @@ impl IssueRepository for IssueRepositoryAdapter {
             };
             rank(&a.priority).cmp(&rank(&b.priority)).then(a.number.cmp(&b.number))
         });
+
+        // Apply `limit` AFTER the priority sort so it returns the true top-N by
+        // priority (then number), not an arbitrary DB-ordered subset. The sort
+        // rank is non-lexical, so it can't be pushed into a SQL ORDER BY.
+        if let Some(limit) = filter.limit {
+            rows.truncate(limit as usize);
+        }
 
         Ok(rows.into_iter().map(Into::into).collect())
     }
@@ -410,6 +414,48 @@ mod tests {
         assert!(issues.iter().all(|i| i.status.is_open()));
         assert_eq!(issues[0].status, IssueStatus::DevInProgress);
         assert!(!issues.iter().any(|i| matches!(i.status, IssueStatus::Done | IssueStatus::Backlog)));
+    }
+
+    #[tokio::test]
+    async fn list_limit_returns_top_n_by_priority() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("lim", "lim", "LM", None::<String>).unwrap())
+            .await
+            .unwrap();
+
+        // Insert low-priority issues FIRST (lower numbers), then a single Urgent
+        // one LAST (highest number). A pre-sort SQL LIMIT would drop the Urgent
+        // row; the correct behavior keeps it because it sorts highest.
+        for priority in [IssuePriority::Low, IssuePriority::Low, IssuePriority::Medium, IssuePriority::Urgent] {
+            let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+            let record = NewIssueRecord {
+                project_id: project.id,
+                number,
+                title: format!("{priority}"),
+                description: "".into(),
+                status: IssueStatus::DevNeeded,
+                priority,
+                size: None,
+                slug: format!("LM-{number}"),
+                submitted_by: 1,
+            };
+            svc.issue_repository().create(&*tx, record).await.unwrap();
+        }
+
+        let filter = IssueFilter {
+            limit: Some(1),
+            ..Default::default()
+        };
+        let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0].priority,
+            IssuePriority::Urgent,
+            "limit must return the highest-priority issue, not an arbitrary row"
+        );
     }
 
     #[tokio::test]
