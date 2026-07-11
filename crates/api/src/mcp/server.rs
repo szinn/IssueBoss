@@ -582,8 +582,9 @@ impl IssueBossServer {
     #[tool(
         description = "List OPEN issues in a project — every issue whose status is not Done, Canceled, or Backlog. Returns compact summary rows (slug, \
                        status, priority, size, title, assigned) by default; pass full: true for complete issue objects. Accepts the same secondary filters as \
-                       list_issues (priority, size, assigned_to, submitted_by, exclude_blocked, limit). Prefer this over list_issues when you want the active \
-                       work; it cannot overflow the result token cap on large projects."
+                       list_issues (priority, size, assigned_to, submitted_by, exclude_blocked, limit). Prefer this over list_issues for active work: compact \
+                       rows are far smaller, so a listing is much less likely to overflow the result token cap. On very large projects pass limit (results \
+                       are highest-priority first) to stay well under the cap."
     )]
     async fn list_open_issues(&self, params: Parameters<ListOpenIssuesParams>) -> Result<String, McpError> {
         let p = params.0;
@@ -1048,9 +1049,9 @@ impl ServerHandler for IssueBossServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
             "IssueBoss issue tracker. The project slug is pre-configured. To see active work, prefer list_open_issues (returns compact rows for every \
-             non-terminal issue and won't overflow the token cap). Use list_issues with a status filter for a specific pipeline state, or summary: true for \
-             compact rows. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects lists all accessible projects; \
-             issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
+             non-terminal issue — far smaller than full objects; pass limit on very large projects). Use list_issues with a status filter for a specific \
+             pipeline state, or summary: true for compact rows. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects \
+             lists all accessible projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
         )
     }
 
