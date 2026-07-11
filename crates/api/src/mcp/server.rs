@@ -182,6 +182,28 @@ pub struct ListIssuesParams {
     pub summary: Option<bool>,
 }
 
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListOpenIssuesParams {
+    /// Project slug, e.g. "issueboss"
+    pub project_slug: String,
+    /// Filter by priority, e.g. "High"
+    pub priority: Option<String>,
+    /// Filter by size, e.g. "Small"
+    pub size: Option<String>,
+    /// Max results to return
+    pub limit: Option<u64>,
+    /// When true, omit issues blocked by at least one non-Done dependency
+    /// (Canceled dependencies still count as active blockers)
+    pub exclude_blocked: Option<bool>,
+    /// Filter by submitter user token, e.g. "U_1"
+    pub submitted_by: Option<String>,
+    /// Filter by assigned user token, e.g. "U_2"
+    pub assigned_to: Option<String>,
+    /// When true, return full issue objects instead of compact summary rows.
+    /// Defaults to false (summary), so a listing can't overflow the token cap.
+    pub full: Option<bool>,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CreateIssueParams {
     /// Project slug, e.g. "issueboss"
@@ -554,6 +576,78 @@ impl IssueBossServer {
                 summaries.push(build_issue_summary_mcp(&self.core, issue).await?);
             }
             serialize(&summaries)
+        }
+    }
+
+    #[tool(
+        description = "List OPEN issues in a project — every issue whose status is not Done, Canceled, or Backlog. Returns compact summary rows (slug, \
+                       status, priority, size, title, assigned) by default; pass full: true for complete issue objects. Accepts the same secondary filters as \
+                       list_issues (priority, size, assigned_to, submitted_by, exclude_blocked, limit). Prefer this over list_issues when you want the active \
+                       work; it cannot overflow the result token cap on large projects."
+    )]
+    async fn list_open_issues(&self, params: Parameters<ListOpenIssuesParams>) -> Result<String, McpError> {
+        let p = params.0;
+        let project = self
+            .core
+            .project_service()
+            .find_by_slug(&p.project_slug)
+            .await
+            .map_err(map_core_err)?
+            .ok_or_else(|| McpError::invalid_params(format!("project '{}' not found", p.project_slug), None))?;
+        self.require_capability(project.id, Capability::ViewIssues).await?;
+
+        let filter = IssueFilter {
+            status: None,
+            priority: p
+                .priority
+                .as_deref()
+                .map(|s| {
+                    s.parse::<IssuePriority>()
+                        .map_err(|_| McpError::invalid_params(format!("invalid priority: {s}"), None))
+                })
+                .transpose()?,
+            size: p
+                .size
+                .as_deref()
+                .map(|s| s.parse::<IssueSize>().map_err(|_| McpError::invalid_params(format!("invalid size: {s}"), None)))
+                .transpose()?,
+            limit: p.limit,
+            exclude_blocked: p.exclude_blocked,
+            submitted_by: p
+                .submitted_by
+                .as_deref()
+                .map(|s| {
+                    UserToken::parse(s)
+                        .map(|t| t.id())
+                        .map_err(|_| McpError::invalid_params(format!("invalid user token: {s}"), None))
+                })
+                .transpose()?,
+            assigned_to: p
+                .assigned_to
+                .as_deref()
+                .map(|s| {
+                    UserToken::parse(s)
+                        .map(|t| t.id())
+                        .map_err(|_| McpError::invalid_params(format!("invalid user token: {s}"), None))
+                })
+                .transpose()?,
+            status_not_in: vec![IssueStatus::Done, IssueStatus::Canceled, IssueStatus::Backlog],
+        };
+
+        let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;
+
+        if p.full == Some(true) {
+            let mut summaries = Vec::with_capacity(issues.len());
+            for issue in issues {
+                summaries.push(build_issue_summary_mcp(&self.core, issue).await?);
+            }
+            serialize(&summaries)
+        } else {
+            let mut rows = Vec::with_capacity(issues.len());
+            for issue in issues {
+                rows.push(build_issue_summary_row_mcp(&self.core, issue).await?);
+            }
+            serialize(&rows)
         }
     }
 
@@ -953,9 +1047,10 @@ impl IssueBossServer {
 impl ServerHandler for IssueBossServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
-            "IssueBoss issue tracker. The project slug is pre-configured — use it with list_issues to find issues. Filter by status (e.g. TriageNeeded, \
-             DevInProgress) to efficiently query large projects. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects \
-             lists all accessible projects; issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
+            "IssueBoss issue tracker. The project slug is pre-configured. To see active work, prefer list_open_issues (returns compact rows for every \
+             non-terminal issue and won't overflow the token cap). Use list_issues with a status filter for a specific pipeline state, or summary: true for \
+             compact rows. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects lists all accessible projects; \
+             issueboss://issues/{slug} reads a single issue (e.g. IB-5).",
         )
     }
 
@@ -2925,5 +3020,60 @@ mod tests {
         let json_omit = r#"{"project_slug": "ib"}"#;
         let params_omit: ListIssuesParams = serde_json::from_str(json_omit).expect("should deserialize");
         assert_eq!(params_omit.exclude_blocked, None);
+    }
+
+    #[tokio::test]
+    async fn list_open_issues_excludes_terminal_and_defaults_to_summary() {
+        let project = fake_project(1, "myapp");
+        let issue = fake_issue(10, 1, 1); // status: TriageNeeded (open)
+
+        let mut project_repo = MockProjectRepository::new();
+        {
+            let p = project.clone();
+            project_repo.expect_find_by_slug().returning(move |_, _| {
+                let p = p.clone();
+                Box::pin(async move { Ok(Some(p)) })
+            });
+        }
+        let mut issue_repo = MockIssueRepository::new();
+        {
+            let i = issue.clone();
+            issue_repo
+                .expect_list()
+                // The tool must ask the core to exclude the three terminal states.
+                .withf(|_, _, filter| {
+                    filter.status_not_in.contains(&IssueStatus::Done)
+                        && filter.status_not_in.contains(&IssueStatus::Canceled)
+                        && filter.status_not_in.contains(&IssueStatus::Backlog)
+                })
+                .returning(move |_, _, _| {
+                    let i = i.clone();
+                    Box::pin(async move { Ok(vec![i]) })
+                });
+        }
+
+        let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
+        let server = IssueBossServer::new(core, fake_user(1));
+
+        let result = server
+            .list_open_issues(Parameters(ListOpenIssuesParams {
+                project_slug: "myapp".to_string(),
+                ..Default::default()
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let rows = json.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["slug"], "TP-1");
+        // Default output is the compact summary row.
+        assert!(rows[0].get("description").is_none(), "default output must be summary");
+        assert!(rows[0].get("token").is_none(), "summary row omits token");
+        assert!(
+            rows.iter()
+                .all(|r| !matches!(r["status"].as_str(), Some("Done") | Some("Canceled") | Some("Backlog"))),
+            "no terminal statuses in open listing"
+        );
     }
 }
