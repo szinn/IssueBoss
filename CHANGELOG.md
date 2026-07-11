@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4](https://github.com/szinn/IssueBoss/compare/v0.3.3..v0.3.4) - 2026-07-11
+
+### Features
+
+- _(api)_ Add list_open_issues MCP tool - ([c0d05d0](https://github.com/szinn/IssueBoss/commit/c0d05d03ac7c5ac3556d72a7595381854e220b44))
+- _(api)_ Add opt-in summary output to list_issues (MCP) - ([365b6b8](https://github.com/szinn/IssueBoss/commit/365b6b8910d077aecaa23bf1b5354c97f7d1c4e6))
+- _(core)_ Add status_not_in filter and IssueStatus::is_open - ([ae526c8](https://github.com/szinn/IssueBoss/commit/ae526c81ab7f7cf43e59d912644eede9afdb8458))
+
+### Bug Fixes
+
+- _(api)_ Migrate MCP resource types to rmcp 2.1.0 API - ([5a8c427](https://github.com/szinn/IssueBoss/commit/5a8c427344bcaf3ee9572980fdd5f5ce6b1d5c57))
+- _(database)_ Apply list limit after priority sort - ([5267a8a](https://github.com/szinn/IssueBoss/commit/5267a8a06fc7393bc3e260e15c06b4d4b40fec2c))
+
+### Documentation
+
+- _(api)_ Soften list_open_issues token-cap claim - ([a274817](https://github.com/szinn/IssueBoss/commit/a27481764fcfae42f3feaea934c15bcddf377b8e))
+- _(skill)_ Document list_open_issues and summary output - ([524a53d](https://github.com/szinn/IssueBoss/commit/524a53d66e0e47423627f89d4d9cd1ea5ab24297))
+
 ## [0.3.3](https://github.com/szinn/IssueBoss/compare/v0.3.2..v0.3.3) - 2026-05-24
 
 ### Bug Fixes
@@ -231,7 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(claude)_ Tell claude how to access IssueBoss - ([96f4446](https://github.com/szinn/IssueBoss/commit/96f444648691e735429cc77b1ec6d356e87d1f0a))
 - _(claude)_ Tell claude how to access IssueBoss - ([cca03a7](https://github.com/szinn/IssueBoss/commit/cca03a79d19b74b2a13acbbb90521185868cbcbd))
 - _(core)_ Remove TransitionStatus capability - ([73a7f03](https://github.com/szinn/IssueBoss/commit/73a7f033769af219a27d2f560bd78e25c467ad3a))
-- _(core)_ Add rmcp and dioxus workspace deps, clean up stale bb-\* profile comments - ([748d3b5](https://github.com/szinn/IssueBoss/commit/748d3b5930452d7cd37bbd8b0e2e55d134983611))
+- _(core)_ Add rmcp and dioxus workspace deps, clean up stale bb-* profile comments - ([748d3b5](https://github.com/szinn/IssueBoss/commit/748d3b5930452d7cd37bbd8b0e2e55d134983611))
 - _(core)_ Scaffold workspace — all crates registered, workspace deps declared - ([ebf1029](https://github.com/szinn/IssueBoss/commit/ebf1029d205b0012f1e522c954847f6d89f5c1af))
 - _(database)_ Don't need down migrations - ([c948017](https://github.com/szinn/IssueBoss/commit/c948017efa3a5d76ef0518c905f89591c6ae8125))
 - _(database)_ Note when database is connected - ([7095995](https://github.com/szinn/IssueBoss/commit/7095995e58de7ff26da2318ce003ac6e6a3c35d2))
