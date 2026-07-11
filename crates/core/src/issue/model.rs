@@ -229,6 +229,10 @@ pub struct IssueFilter {
     pub exclude_blocked: Option<bool>,
     pub submitted_by: Option<UserId>,
     pub assigned_to: Option<UserId>,
+    /// Exclude issues whose status is in this set (empty = no exclusion).
+    /// Used to express "open" (exclude Done/Canceled/Backlog) server-side so
+    /// `limit` and DB paging stay correct.
+    pub status_not_in: Vec<IssueStatus>,
 }
 
 /// Derives the immutable slug for an issue at creation time.
@@ -327,11 +331,45 @@ impl IssueStatus {
             Self::TriageInProgress | Self::ResearchInProgress | Self::SpecInProgress | Self::PlanInProgress | Self::DevInProgress
         )
     }
+
+    /// Returns `true` for every in-pipeline state and `false` for the three
+    /// terminal/off-pipeline states (`Done`, `Canceled`, `Backlog`). This is
+    /// the single source of truth for the "open issue" definition.
+    pub fn is_open(self) -> bool {
+        !matches!(self, Self::Done | Self::Canceled | Self::Backlog)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_open_excludes_only_terminal_states() {
+        use IssueStatus::*;
+        for s in [
+            TriageNeeded,
+            TriageInProgress,
+            TriageReview,
+            ResearchNeeded,
+            ResearchInProgress,
+            ResearchReview,
+            SpecNeeded,
+            SpecInProgress,
+            SpecReview,
+            PlanNeeded,
+            PlanInProgress,
+            PlanReview,
+            DevNeeded,
+            DevInProgress,
+            DevReview,
+        ] {
+            assert!(s.is_open(), "{s} should be open");
+        }
+        for s in [Backlog, Canceled, Done] {
+            assert!(!s.is_open(), "{s} should not be open");
+        }
+    }
 
     #[test]
     fn issue_token_roundtrips() {

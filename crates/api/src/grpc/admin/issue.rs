@@ -117,6 +117,7 @@ pub(crate) mod handler {
             exclude_blocked: req.exclude_blocked,
             submitted_by: None,
             assigned_to: None,
+            status_not_in: Vec::new(),
         };
         let issues = core.issue_service().list_issues(project.id, filter).await?;
         let mut responses = Vec::with_capacity(issues.len());

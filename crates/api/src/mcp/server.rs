@@ -509,6 +509,7 @@ impl IssueBossServer {
                         .map_err(|_| McpError::invalid_params(format!("invalid user token: {s}"), None))
                 })
                 .transpose()?,
+            status_not_in: Vec::new(),
         };
 
         let issues = self.core.issue_service().list_issues(project.id, filter).await.map_err(map_core_err)?;

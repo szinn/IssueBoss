@@ -114,6 +114,10 @@ impl IssueRepository for IssueRepositoryAdapter {
         if let Some(status) = filter.status {
             query = query.filter(issues::Column::Status.eq(status.to_string()));
         }
+        if !filter.status_not_in.is_empty() {
+            let excluded: Vec<String> = filter.status_not_in.iter().map(|s| s.to_string()).collect();
+            query = query.filter(issues::Column::Status.is_not_in(excluded));
+        }
         if let Some(priority) = filter.priority {
             query = query.filter(issues::Column::Priority.eq(priority.to_string()));
         }
@@ -369,6 +373,43 @@ mod tests {
         let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].status, IssueStatus::DevInProgress);
+    }
+
+    #[tokio::test]
+    async fn list_filter_by_status_not_in() {
+        let svc = setup().await;
+        let tx = svc.repository().begin().await.unwrap();
+        let project = svc
+            .project_repository()
+            .create(&*tx, NewProject::new("opn", "opn", "OP", None::<String>).unwrap())
+            .await
+            .unwrap();
+
+        for status in [IssueStatus::DevInProgress, IssueStatus::Done, IssueStatus::Backlog] {
+            let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
+            let record = NewIssueRecord {
+                project_id: project.id,
+                number,
+                title: format!("{status}"),
+                description: "".into(),
+                status,
+                priority: IssuePriority::Medium,
+                size: None,
+                slug: format!("OP-{number}"),
+                submitted_by: 1,
+            };
+            svc.issue_repository().create(&*tx, record).await.unwrap();
+        }
+
+        let filter = IssueFilter {
+            status_not_in: vec![IssueStatus::Done, IssueStatus::Canceled, IssueStatus::Backlog],
+            ..Default::default()
+        };
+        let issues = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
+        assert_eq!(issues.len(), 1);
+        assert!(issues.iter().all(|i| i.status.is_open()));
+        assert_eq!(issues[0].status, IssueStatus::DevInProgress);
+        assert!(!issues.iter().any(|i| matches!(i.status, IssueStatus::Done | IssueStatus::Backlog)));
     }
 
     #[tokio::test]
