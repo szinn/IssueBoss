@@ -14,7 +14,8 @@ If the file is missing, stop and ask the user to create it.
 
 ## Tools
 
-list_issues — filter by status/priority/size/limit
+list_issues — filter by status/priority/size/limit; summary:true for compact rows
+list_open_issues — issues not in Done/Canceled/Backlog; compact rows by default, full:true for full objects
 create_issue — new issue
 update_issue — title/description/priority/size
 transition_issue — advance pipeline status
@@ -187,3 +188,5 @@ Show issue fields (slug, title, status, priority, size, description, submitter f
 Show slug, status, priority, title. Lead with actionable states (TriageNeeded, in-progress) before blocked/low-priority. **Do not include Backlog or Canceled issues** unless the user explicitly asks for them.
 
 **Open issues** are those in any pipeline state except Done, Backlog, and Canceled. Backlog and Canceled are neither open nor done — Backlog is deprioritized, Canceled is abandoned. Never describe them as open or resolved when summarizing project status.
+
+**For "open issues" / "what's active" queries, use `list_open_issues`** (it excludes Done/Backlog/Canceled and returns compact rows by default) rather than a bare `list_issues`. A no-filter `list_issues` on a large project serializes fat rows and can overflow the MCP result token cap. When you do need `list_issues` for a broad scan, pass `summary: true` for compact rows, and prefer a `status` filter. Reach for full objects (`list_open_issues` with `full: true`, or `list_issues` without `summary`) only when you actually need descriptions, timestamps, or user tokens.
