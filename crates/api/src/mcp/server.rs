@@ -12,8 +12,8 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
-        ResourceTemplate, ServerCapabilities, ServerInfo,
+        ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+        Resource, ResourceContents, ResourceTemplate, ServerCapabilities, ServerInfo,
     },
     schemars, tool, tool_handler, tool_router,
 };
@@ -1081,8 +1081,8 @@ impl ServerHandler for IssueBossServer {
         &self,
         request: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
-        self.read_resource_inner(&request.uri).await
+    ) -> Result<ReadResourceResponse, McpError> {
+        self.read_resource_inner(&request.uri).await.map(Into::into)
     }
 }
 
