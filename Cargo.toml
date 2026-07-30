@@ -83,7 +83,7 @@ testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
-toml = "1.1.2"
+toml = "1.1.4"
 
 # File system
 walkdir = "2.5.0"
