@@ -30,7 +30,7 @@ ib-frontend = { path = "crates/frontend" }
 ib-utils = { path = "crates/utils" }
 
 # Error handling
-anyhow = "1.0.103"
+anyhow = "1.0.104"
 thiserror = "2.0.19"
 
 # Async
