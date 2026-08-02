@@ -36,7 +36,7 @@ thiserror = "2.0.19"
 # Async
 async-trait = "0.1.91"
 tokio = { version = "1.53.1", default-features = false, features = ["full"] }
-tokio-graceful-shutdown = "0.19.3"
+tokio-graceful-shutdown = "0.20.0"
 
 # Web
 axum = "0.8.9"
