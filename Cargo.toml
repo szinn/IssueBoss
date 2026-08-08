@@ -38,6 +38,9 @@ async-trait = "0.1.91"
 tokio = { version = "1.53.1", default-features = false, features = ["full"] }
 tokio-graceful-shutdown = "0.20.0"
 
+# Identifiers
+alderkit-token = "0.1.0"
+
 # Web
 axum = "0.8.9"
 tower = "0.5.3"

@@ -5,6 +5,7 @@ pub mod issue;
 pub mod project;
 pub mod relationship;
 pub mod repository;
+pub mod token;
 pub mod types;
 pub mod user;
 

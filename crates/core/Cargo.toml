@@ -9,6 +9,7 @@ test-support = ["dep:mockall"]
 
 [dependencies]
 ib-utils.workspace = true
+alderkit-token.workspace = true
 
 argon2.workspace = true
 async-trait.workspace = true
