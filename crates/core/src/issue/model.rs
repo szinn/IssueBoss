@@ -1,9 +1,12 @@
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Utc};
-use ib_utils::{Token, define_token_prefix};
 
-use crate::{project::ProjectId, user::UserId};
+use crate::{
+    project::ProjectId,
+    token::{Token, TokenAlphabet, define_token_prefix},
+    user::UserId,
+};
 
 define_token_prefix!(IssueTokenPrefix, "I_");
 
@@ -22,7 +25,7 @@ impl fmt::Display for ParseEnumError {
 impl std::error::Error for ParseEnumError {}
 
 pub type IssueId = u64;
-pub type IssueToken = Token<IssueTokenPrefix, IssueId, { i64::MAX as u128 }>;
+pub type IssueToken = Token<IssueTokenPrefix, IssueId, TokenAlphabet, { i64::MAX as u128 }>;
 
 // ── Enumerations ─────────────────────────────────────────────────────────────
 

@@ -1,13 +1,15 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use chrono::{DateTime, Utc};
-use ib_utils::{Token, define_token_prefix};
 
-use crate::types::Capabilities;
+use crate::{
+    token::{Token, TokenAlphabet, define_token_prefix},
+    types::Capabilities,
+};
 
 define_token_prefix!(UserTokenPrefix, "U_");
 
 pub type UserId = u64;
-pub type UserToken = Token<UserTokenPrefix, UserId, { i64::MAX as u128 }>;
+pub type UserToken = Token<UserTokenPrefix, UserId, TokenAlphabet, { i64::MAX as u128 }>;
 
 #[derive(Debug, Clone)]
 pub struct User {

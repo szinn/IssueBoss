@@ -1,12 +1,15 @@
 use chrono::{DateTime, Utc};
-use ib_utils::{Token, define_token_prefix};
 
-use crate::{types::Capabilities, user::UserId};
+use crate::{
+    token::{Token, TokenAlphabet, define_token_prefix},
+    types::Capabilities,
+    user::UserId,
+};
 
 define_token_prefix!(ProjectTokenPrefix, "P_");
 
 pub type ProjectId = u64;
-pub type ProjectToken = Token<ProjectTokenPrefix, ProjectId, { i64::MAX as u128 }>;
+pub type ProjectToken = Token<ProjectTokenPrefix, ProjectId, TokenAlphabet, { i64::MAX as u128 }>;
 
 #[derive(Debug, Clone)]
 pub struct Project {

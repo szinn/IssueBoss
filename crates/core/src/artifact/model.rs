@@ -1,11 +1,13 @@
 use chrono::{DateTime, Utc};
-use ib_utils::{Token, define_token_prefix};
 
-use crate::issue::IssueId;
+use crate::{
+    issue::IssueId,
+    token::{Token, TokenAlphabet, define_token_prefix},
+};
 
 define_token_prefix!(ArtifactTokenPrefix, "A_");
 pub type ArtifactId = u64;
-pub type ArtifactToken = Token<ArtifactTokenPrefix, ArtifactId, { i64::MAX as u128 }>;
+pub type ArtifactToken = Token<ArtifactTokenPrefix, ArtifactId, TokenAlphabet, { i64::MAX as u128 }>;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ArtifactKind {
