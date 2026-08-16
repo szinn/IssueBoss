@@ -80,7 +80,7 @@ sha2 = "0.11.0"
 # Testing
 mockall = "0.15.0"
 tempfile = "3.27.0"
-testcontainers = "0.27.3"
+testcontainers = "0.28.0"
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
 # Serialization
