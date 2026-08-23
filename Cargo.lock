@@ -1800,7 +1800,7 @@ dependencies = [
 
 [[package]]
 name = "ib-api"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -1823,7 +1823,7 @@ dependencies = [
 
 [[package]]
 name = "ib-core"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "alderkit-token",
  "argon2",
@@ -1840,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "ib-database"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1858,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "ib-frontend"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -1871,7 +1871,7 @@ dependencies = [
 
 [[package]]
 name = "ib-utils"
-version = "0.3.5"
+version = "0.3.6"
 
 [[package]]
 name = "icu_collections"
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "insights"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2030,7 +2030,7 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2053,7 +2053,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "issueboss"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "clap",

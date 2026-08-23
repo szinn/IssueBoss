@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6](https://github.com/szinn/IssueBoss/compare/v0.3.5..v0.3.6) - 2026-08-23
+
+### Refactor
+
+- _(core)_ Remove ib-utils Token in favor of alderkit-token - ([b0ecd26](https://github.com/szinn/IssueBoss/commit/b0ecd26e7213c2e06ae34bbec97a8a65e0b17b08))
+- _(core)_ Migrate UserToken/ProjectToken/IssueToken/ArtifactToken to core::token - ([b9999ac](https://github.com/szinn/IssueBoss/commit/b9999ace7ae2b8be2bc8510d4c4fa7832604bb91))
+- _(core)_ Add core::token module backed by alderkit-token - ([0c0bc5f](https://github.com/szinn/IssueBoss/commit/0c0bc5f123b523cb15abb33cb464e1aece0cad8e))
+
+### Miscellaneous Tasks
+
+- _(workspace)_ Fix deprecated clippy lint key name - ([2e48be4](https://github.com/szinn/IssueBoss/commit/2e48be46a9193a588a7274fc0db153cefd80e59a))
+
 ## [0.3.5](https://github.com/szinn/IssueBoss/compare/v0.3.3..v0.3.5) - 2026-08-02
 
 ### Features
