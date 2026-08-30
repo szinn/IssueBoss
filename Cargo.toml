@@ -73,7 +73,7 @@ tonic-prost-build = "0.14.6"
 tonic-reflection = "0.14.6"
 
 # Crypto
-argon2 = { version = "0.5.3", features = ["std"] }
+argon2 = { version = "0.6.0", features = ["std"] }
 rand = "0.10.2"
 sha2 = "0.11.0"
 
