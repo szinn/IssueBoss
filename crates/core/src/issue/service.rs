@@ -74,7 +74,7 @@ impl IssueService for IssueServiceImpl {
                 return Err(Error::Validation(format!("illegal transition: {} → {}", issue.status, new_status)));
             }
             let artifacts = artifact_repository.list(tx, issue.id, None).await?;
-            let auto_reason = check_transition_gate(&issue.status, &new_status, &artifacts)?;
+            let auto_reason = check_transition_gate(issue.status, new_status, &artifacts)?;
             let final_reason = reason.or(auto_reason).unwrap_or_default();
             let from_str = issue.status.to_string();
             let to_str = new_status.to_string();
@@ -101,7 +101,7 @@ impl IssueService for IssueServiceImpl {
                             "reason": final_reason,
                             "triggered_by_id": triggered_by,
                         }),
-                        created_by: triggered_by.map(|id| UserToken::new(id).to_string()).unwrap_or_else(|| "system".into()),
+                        created_by: triggered_by.map_or_else(|| "system".into(), |id| UserToken::new(id).to_string()),
                     },
                 )
                 .await?;
@@ -127,8 +127,8 @@ impl IssueService for IssueServiceImpl {
     }
 }
 
-fn check_transition_gate(from: &IssueStatus, to: &IssueStatus, artifacts: &[IssueArtifact]) -> Result<Option<String>, Error> {
-    use ArtifactKind::*;
+fn check_transition_gate(from: IssueStatus, to: IssueStatus, artifacts: &[IssueArtifact]) -> Result<Option<String>, Error> {
+    use ArtifactKind::{ResearchTopic, TriageResult, Spec, Plan};
 
     // ── Prerequisites for entering Needed states ────────────────────────────
     // These fire for any (from, to) where `to` is a gated Needed state.
@@ -266,7 +266,7 @@ fn covered_topic_tokens(artifacts: &[IssueArtifact]) -> std::collections::HashSe
     artifacts
         .iter()
         .filter(|a| a.kind == ArtifactKind::Research)
-        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(std::borrow::ToOwned::to_owned))
         .collect()
 }
 
@@ -286,7 +286,6 @@ mod tests {
         issue::{Issue, IssueFilter, IssueId, IssuePriority, IssueStatus, IssueToken, NewIssue, repository::MockIssueRepository},
         project::{ProjectId, ProjectToken, model::Project, repository::MockProjectRepository},
         repository::testing::default_repository_service_builder,
-        user::UserId,
     };
 
     fn fake_project(id: ProjectId) -> Project {
@@ -313,13 +312,13 @@ mod tests {
             number,
             project_id,
             title: format!("Issue {number}"),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
             slug: format!("TP-{number}-issue-{number}"),
             version: 0,
-            submitter: 1 as UserId,
+            submitter: 1u64,
             assigned: None,
             created_at: now,
             updated_at: now,
@@ -459,8 +458,8 @@ mod tests {
             issue_repo.expect_find_by_id().withf(|_, id| *id == 42).returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let t = transitioned.clone();
             issue_repo
@@ -469,8 +468,8 @@ mod tests {
                 .returning(move |_, _| {
                     let t = t.clone();
                     Box::pin(async move { Ok(t) })
-                });
-        }
+                })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
@@ -503,8 +502,8 @@ mod tests {
             issue_repo.expect_find_by_id().withf(|_, id| *id == 42).returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // TriageNeeded → DevReview jumps categories — illegal
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::DevReview, None, Some(1u64)).await;
@@ -531,8 +530,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_svc(MockProjectRepository::new(), issue_repo);
         // TriageNeeded → TriageNeeded is a self-transition — illegal
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageNeeded, None, Some(1u64)).await;
@@ -549,8 +548,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
@@ -568,8 +567,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
@@ -598,16 +597,16 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let t = topic.clone();
             artifact_repo.expect_list().returning(move |_, _, _| {
                 let t = t.clone();
                 Box::pin(async move { Ok(vec![t]) })
-            });
-        }
+            })
+        };
 
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::ResearchReview, None, Some(1u64)).await;
@@ -627,8 +626,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let a = after.clone();
             issue_repo
@@ -637,8 +636,8 @@ mod tests {
                 .returning(move |_, _| {
                     let a = a.clone();
                     Box::pin(async move { Ok(a) })
-                });
-        }
+                })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
@@ -678,8 +677,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let a = after.clone();
             issue_repo
@@ -689,8 +688,8 @@ mod tests {
                 .returning(move |_, _| {
                     let a = a.clone();
                     Box::pin(async move { Ok(a) })
-                });
-        }
+                })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         // TriageInProgress → TriageReview requires a TriageResult
         artifact_repo.expect_list().returning(|_, _, _| {
@@ -744,15 +743,15 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let a = after.clone();
             issue_repo.expect_update().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(a) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         // Capture the artifact body to assert on it
@@ -761,7 +760,7 @@ mod tests {
             .expect_create()
             .withf(move |_, new_artifact| {
                 let body = &new_artifact.body;
-                body.get("triggered_by_id").and_then(|v| v.as_u64()) == Some(5) && new_artifact.created_by == expected_token
+                body.get("triggered_by_id").and_then(serde_json::Value::as_u64) == Some(5) && new_artifact.created_by == expected_token
             })
             .returning(|_, _| {
                 Box::pin(async {
@@ -780,7 +779,7 @@ mod tests {
             });
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, Some(5u64)).await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
@@ -796,15 +795,15 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let a = after.clone();
             issue_repo.expect_update().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(a) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo
@@ -827,7 +826,7 @@ mod tests {
             });
         let svc = make_svc_with_artifacts(MockProjectRepository::new(), issue_repo, artifact_repo);
         let result = svc.transition_issue(IssueToken::new(42), IssueStatus::TriageInProgress, None, None).await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     fn make_artifact(id: u64, issue_id: u64, kind: ArtifactKind) -> IssueArtifact {
@@ -847,7 +846,7 @@ mod tests {
     // ResearchNeeded entry gate: blocked without ResearchTopic
     #[test]
     fn gate_research_needed_blocked_without_research_topics() {
-        let result = super::check_transition_gate(&IssueStatus::TriageReview, &IssueStatus::ResearchNeeded, &[]);
+        let result = super::check_transition_gate(IssueStatus::TriageReview, IssueStatus::ResearchNeeded, &[]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "no_research_topics"));
     }
 
@@ -855,14 +854,14 @@ mod tests {
     #[test]
     fn gate_research_needed_passes_with_research_topic() {
         let topic = make_artifact(1, 1, ArtifactKind::ResearchTopic);
-        let result = super::check_transition_gate(&IssueStatus::TriageReview, &IssueStatus::ResearchNeeded, &[topic]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::TriageReview, IssueStatus::ResearchNeeded, &[topic]);
+        result.unwrap();
     }
 
     // PlanNeeded entry gate: blocked without triage result or spec
     #[test]
     fn gate_plan_needed_blocked_without_planning_inputs() {
-        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[]);
+        let result = super::check_transition_gate(IssueStatus::SpecReview, IssueStatus::PlanNeeded, &[]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_planning_input"));
     }
 
@@ -872,8 +871,8 @@ mod tests {
         let mut triage = make_artifact(1, 1, ArtifactKind::TriageResult);
         triage.slug = Some("triage".into());
         triage.body = serde_json::json!({"path": "triage.md"});
-        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[triage]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::SpecReview, IssueStatus::PlanNeeded, &[triage]);
+        result.unwrap();
     }
 
     // PlanNeeded entry gate: passes with Spec (even without TriageResult)
@@ -882,14 +881,14 @@ mod tests {
         let mut spec = make_artifact(2, 1, ArtifactKind::Spec);
         spec.slug = Some("spec".into());
         spec.body = serde_json::json!({"path": "spec.md"});
-        let result = super::check_transition_gate(&IssueStatus::SpecReview, &IssueStatus::PlanNeeded, &[spec]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::SpecReview, IssueStatus::PlanNeeded, &[spec]);
+        result.unwrap();
     }
 
     // DevNeeded entry gate: blocked without Plan
     #[test]
     fn gate_dev_needed_blocked_without_plan() {
-        let result = super::check_transition_gate(&IssueStatus::PlanReview, &IssueStatus::DevNeeded, &[]);
+        let result = super::check_transition_gate(IssueStatus::PlanReview, IssueStatus::DevNeeded, &[]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_plan"));
     }
 
@@ -899,8 +898,8 @@ mod tests {
         let mut plan = make_artifact(3, 1, ArtifactKind::Plan);
         plan.slug = Some("plan".into());
         plan.body = serde_json::json!({"path": "plan.md"});
-        let result = super::check_transition_gate(&IssueStatus::PlanReview, &IssueStatus::DevNeeded, &[plan]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::PlanReview, IssueStatus::DevNeeded, &[plan]);
+        result.unwrap();
     }
 
     // ResearchNeeded→ResearchInProgress: all topics covered blocks transition
@@ -909,14 +908,14 @@ mod tests {
         let topic = make_artifact(10, 1, ArtifactKind::ResearchTopic);
         let mut research = make_artifact(11, 1, ArtifactKind::Research);
         research.body = serde_json::json!({"topic_token": topic.token.to_string(), "status": "completed", "path": "r.md"});
-        let result = super::check_transition_gate(&IssueStatus::ResearchNeeded, &IssueStatus::ResearchInProgress, &[topic, research]);
+        let result = super::check_transition_gate(IssueStatus::ResearchNeeded, IssueStatus::ResearchInProgress, &[topic, research]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "all_topics_covered"));
     }
 
     // SpecInProgress→SpecReview: blocked without Spec
     #[test]
     fn gate_spec_inprogress_to_review_blocked_without_spec() {
-        let result = super::check_transition_gate(&IssueStatus::SpecInProgress, &IssueStatus::SpecReview, &[]);
+        let result = super::check_transition_gate(IssueStatus::SpecInProgress, IssueStatus::SpecReview, &[]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_spec"));
     }
 
@@ -926,14 +925,14 @@ mod tests {
         let mut spec = make_artifact(5, 1, ArtifactKind::Spec);
         spec.slug = Some("spec".into());
         spec.body = serde_json::json!({"path": "spec.md"});
-        let result = super::check_transition_gate(&IssueStatus::SpecInProgress, &IssueStatus::SpecReview, &[spec]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::SpecInProgress, IssueStatus::SpecReview, &[spec]);
+        result.unwrap();
     }
 
     // PlanInProgress→PlanReview: blocked without Plan
     #[test]
     fn gate_plan_inprogress_to_review_blocked_without_plan() {
-        let result = super::check_transition_gate(&IssueStatus::PlanInProgress, &IssueStatus::PlanReview, &[]);
+        let result = super::check_transition_gate(IssueStatus::PlanInProgress, IssueStatus::PlanReview, &[]);
         assert!(matches!(result, Err(Error::GateFailure { ref condition, .. }) if condition == "missing_plan"));
     }
 
@@ -943,7 +942,7 @@ mod tests {
         let mut plan = make_artifact(6, 1, ArtifactKind::Plan);
         plan.slug = Some("plan".into());
         plan.body = serde_json::json!({"path": "plan.md"});
-        let result = super::check_transition_gate(&IssueStatus::PlanInProgress, &IssueStatus::PlanReview, &[plan]);
-        assert!(result.is_ok());
+        let result = super::check_transition_gate(IssueStatus::PlanInProgress, IssueStatus::PlanReview, &[plan]);
+        result.unwrap();
     }
 }

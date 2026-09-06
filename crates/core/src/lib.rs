@@ -33,7 +33,7 @@ pub struct CoreServices {
 }
 
 impl CoreServices {
-    pub(crate) fn new(repository_service: Arc<RepositoryService>) -> Self {
+    pub(crate) fn new(repository_service: &Arc<RepositoryService>) -> Self {
         let user_service = Arc::new(UserServiceImpl::new(repository_service.clone()));
         let api_key_service = Arc::new(ApiKeyServiceImpl::new(repository_service.clone()));
         let project_service = Arc::new(ProjectServiceImpl::new(repository_service.clone()));
@@ -81,6 +81,7 @@ impl CoreServices {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)] // constructor: ownership is the natural API shape for callers
 pub fn create_services(repository_service: Arc<RepositoryService>) -> Arc<CoreServices> {
-    Arc::new(CoreServices::new(repository_service))
+    Arc::new(CoreServices::new(&repository_service))
 }

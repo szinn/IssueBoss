@@ -286,7 +286,7 @@ struct RemoveArtifactParams {
 struct ListArtifactsParams {
     /// Issue slug, e.g. "IB-42"
     issue_slug: String,
-    /// Optional list of kinds to filter by (e.g. ["Research", "ResearchTopic"])
+    /// Optional list of kinds to filter by (e.g. `["Research", "ResearchTopic"]`)
     kinds: Option<Vec<String>>,
     /// When true, only return ResearchTopics with no corresponding Research
     /// artifact
@@ -358,13 +358,13 @@ fn serialize<T: serde::Serialize>(value: &T) -> Result<String, McpError> {
     serde_json::to_string(value).map_err(|e| McpError::internal_error(e.to_string(), None))
 }
 
-fn build_completeness(status: &IssueStatus, artifacts: &[IssueArtifact]) -> serde_json::Value {
+fn build_completeness(status: IssueStatus, artifacts: &[IssueArtifact]) -> serde_json::Value {
     // Only completed Research artifacts count as covering a topic; cancelled
     // ones do not.
     let covered: std::collections::HashSet<String> = artifacts
         .iter()
         .filter(|a| a.kind == ArtifactKind::Research && a.body.get("status").and_then(|v| v.as_str()) == Some("completed"))
-        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+        .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(std::borrow::ToOwned::to_owned))
         .collect();
     serde_json::json!({
         "status": status.to_string(),
@@ -766,7 +766,7 @@ impl IssueBossServer {
             .await
             .map_err(map_core_err)?;
 
-        let completeness = build_completeness(&updated.status, &artifacts);
+        let completeness = build_completeness(updated.status, &artifacts);
         serialize(&TransitionIssueMcp {
             issue: build_issue_summary_mcp(&self.core, updated).await?,
             completeness,
@@ -913,9 +913,7 @@ impl IssueBossServer {
                     .issue_service()
                     .find_by_id(artifact.issue_id)
                     .await
-                    .map_err(map_core_err)?
-                    .map(|i| i.slug)
-                    .unwrap_or_else(|| format!("#{}", artifact.issue_id));
+                    .map_err(map_core_err)?.map_or_else(|| format!("#{}", artifact.issue_id), |i| i.slug);
                 slug_cache.insert(artifact.issue_id, slug.clone());
                 slug
             };
@@ -1055,26 +1053,26 @@ impl ServerHandler for IssueBossServer {
         )
     }
 
-    async fn list_resources(
+    fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, McpError> {
-        Ok(ListResourcesResult::with_all_items(vec![
+    ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send {
+        std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
             Resource::new("issueboss://projects", "Projects")
                 .with_description("All projects the authenticated user is a member of")
                 .with_mime_type("application/json"),
-        ]))
+        ])))
     }
 
-    async fn list_resource_templates(
+    fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<RoleServer>,
-    ) -> Result<ListResourceTemplatesResult, McpError> {
-        Ok(ListResourceTemplatesResult::with_all_items(vec![
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, McpError>> + Send {
+        std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
             ResourceTemplate::new("issueboss://issues/{slug}", "Issue by Slug").with_description("A single issue by slug, e.g. IB-5"),
-        ]))
+        ])))
     }
 
     async fn read_resource(
@@ -1092,14 +1090,12 @@ impl ServerHandler for IssueBossServer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use chrono::Utc;
     use ib_core::{
-        issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
-        project::{MockProjectMemberRepository, MockProjectRepository, Project, ProjectMember, ProjectToken},
+        issue::{IssueToken, MockIssueRepository},
+        project::{MockProjectMemberRepository, MockProjectRepository, ProjectMember, ProjectToken},
         types::Capabilities,
-        user::{MockUserRepository, User, UserToken},
+        user::MockUserRepository,
     };
 
     use super::*;
@@ -1310,16 +1306,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_list().returning(move |_, _, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(vec![i]) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -1355,16 +1351,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_list().returning(move |_, _, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(vec![i]) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -1412,7 +1408,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1424,8 +1420,8 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let issue_repo = MockIssueRepository::new();
 
         let core = make_core(project_repo, issue_repo);
@@ -1445,7 +1441,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1459,16 +1455,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
 
@@ -1489,7 +1485,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1503,16 +1499,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         // Member exists but has no capabilities
         let mut member_repo = MockProjectMemberRepository::new();
         {
@@ -1526,8 +1522,8 @@ mod tests {
             member_repo.expect_find().returning(move |_, _, _| {
                 let m = member.clone();
                 Box::pin(async move { Ok(Some(m)) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_members(project_repo, MockIssueRepository::new(), user_repo, member_repo);
         let server = IssueBossServer::new(core, user);
@@ -1546,7 +1542,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1560,16 +1556,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
 
@@ -1586,7 +1582,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -1604,8 +1600,8 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             let p = project.clone();
             // create_issue internally calls find_by_id to verify the project
@@ -1613,21 +1609,17 @@ mod tests {
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
-        {
-            // create_issue calls increment_issue_counter to get the next issue
-            // number
-            project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(2u32) }));
-        }
+            })
+        };
+        project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(2u32) }));
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_create().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(i) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -1692,7 +1684,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1704,8 +1696,8 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let issue_repo = MockIssueRepository::new();
 
         let core = make_core(project_repo, issue_repo);
@@ -1721,7 +1713,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -1744,15 +1736,15 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let u = updated.clone();
             issue_repo.expect_update().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(u) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -1791,7 +1783,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1804,8 +1796,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
 
         let core = make_core(project_repo, issue_repo);
         let server = IssueBossServer::new(core, fake_user(1));
@@ -1820,7 +1812,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1833,16 +1825,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -1855,7 +1847,7 @@ mod tests {
                 size: None,
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -1883,15 +1875,15 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let i = issue.clone();
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let t = transitioned.clone();
             issue_repo
@@ -1900,8 +1892,8 @@ mod tests {
                 .returning(move |_, _| {
                     let t = t.clone();
                     Box::pin(async move { Ok(t) })
-                });
-        }
+                })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
@@ -1954,7 +1946,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1973,7 +1965,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -1986,16 +1978,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -2006,7 +1998,7 @@ mod tests {
                 reason: None,
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2024,8 +2016,8 @@ mod tests {
             project_repo.expect_list_for_user().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(p) })
-            });
-        }
+            })
+        };
         let issue_repo = MockIssueRepository::new();
 
         let core = make_core(project_repo, issue_repo);
@@ -2061,8 +2053,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut rel_repo = MockIssueRelationshipRepository::new();
         rel_repo
             .expect_list_for_issue()
@@ -2095,7 +2087,7 @@ mod tests {
 
         let result = server.read_resource_inner("issueboss://unknown").await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2128,16 +2120,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_create().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(a) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
         let server = IssueBossServer::new(core, fake_user(1));
@@ -2177,7 +2169,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2199,7 +2191,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2212,16 +2204,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -2233,7 +2225,7 @@ mod tests {
                 body: serde_json::json!({"text": "hello"}),
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2270,23 +2262,23 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = original.clone();
             artifact_repo.expect_find_by_slug().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(Some(a)) })
-            });
-        }
+            })
+        };
         {
             let u = updated.clone();
             artifact_repo.expect_update().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(u) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
         let server = IssueBossServer::new(core, fake_user(1));
@@ -2324,7 +2316,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2337,16 +2329,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -2357,7 +2349,7 @@ mod tests {
                 body: serde_json::json!({"text": "updated"}),
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2390,16 +2382,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_find_by_slug().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(Some(a)) })
-            });
-        }
+            })
+        };
         artifact_repo.expect_delete().returning(|_, _| Box::pin(async { Ok(()) }));
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -2435,7 +2427,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2448,16 +2440,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -2467,7 +2459,7 @@ mod tests {
                 artifact_slug: "comment".to_string(),
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2503,16 +2495,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_list().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+            })
+        };
 
         let core = make_core_with_artifacts_and_user(project_repo, issue_repo, artifact_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -2553,7 +2545,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2568,8 +2560,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let artifact_repo = MockArtifactRepository::new();
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -2583,7 +2575,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2596,16 +2588,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
@@ -2616,7 +2608,7 @@ mod tests {
                 uncovered_only: false,
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2639,15 +2631,15 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let i = issue.clone();
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         // Return empty list → no TriageResult → gate fails
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
@@ -2704,16 +2696,16 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_find_by_path().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+            })
+        };
         artifact_repo.expect_update().returning(|_, a| Box::pin(async move { Ok(a) }));
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -2757,7 +2749,7 @@ mod tests {
 
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["updated"], 0);
-        assert!(parsed["artifacts"].as_array().unwrap().is_empty());
+        assert_eq!(parsed["artifacts"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
     }
 
     #[tokio::test]
@@ -2771,7 +2763,7 @@ mod tests {
                 new_path: ".insights/new.md".to_string(),
             }))
             .await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[tokio::test]
@@ -2784,21 +2776,21 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
         let core = make_core_with_members(MockProjectRepository::new(), issue_repo, user_repo, member_repo);
         let result = IssueBossServer::new(core, user).read_resource_inner("issueboss://issues/TP-1").await;
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2827,8 +2819,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, slug| {
                 let result = if slug == "TP-1" { Some(i1.clone()) } else { Some(i2.clone()) };
                 Box::pin(async move { Ok(result) })
-            });
-        }
+            })
+        };
         let mut rel_repo = MockIssueRelationshipRepository::new();
         // RelatedTo kind skips cycle check so list_for_issue is not called.
         rel_repo.expect_add().returning(|_, rec| {
@@ -2889,7 +2881,7 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     // -----------------------------------------------------------------------
@@ -2911,8 +2903,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, slug| {
                 let result = if slug == "TP-1" { Some(i1.clone()) } else { Some(i2.clone()) };
                 Box::pin(async move { Ok(result) })
-            });
-        }
+            })
+        };
         let mut rel_repo = MockIssueRelationshipRepository::new();
         rel_repo.expect_remove().returning(|_, _, _, _| Box::pin(async { Ok(true) }));
 
@@ -2952,8 +2944,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut rel_repo = MockIssueRelationshipRepository::new();
         rel_repo.expect_list_for_issue().returning(|_, _| {
             Box::pin(async {
@@ -2980,8 +2972,8 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["depends_on"].as_array().unwrap().len(), 1);
         assert_eq!(json["depends_on"][0]["slug"], "TP-2");
-        assert!(json["blocks"].as_array().unwrap().is_empty());
-        assert!(json["related_to"].as_array().unwrap().is_empty());
+        assert_eq!(json["blocks"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
+        assert_eq!(json["related_to"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
     }
 
     #[tokio::test]
@@ -3039,8 +3031,8 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
@@ -3055,8 +3047,8 @@ mod tests {
                 .returning(move |_, _, _| {
                     let i = i.clone();
                     Box::pin(async move { Ok(vec![i]) })
-                });
-        }
+                })
+        };
 
         let core = make_core_with_user(project_repo, issue_repo, fake_user(1));
         let server = IssueBossServer::new(core, fake_user(1));
@@ -3078,7 +3070,7 @@ mod tests {
         assert!(rows[0].get("token").is_none(), "summary row omits token");
         assert!(
             rows.iter()
-                .all(|r| !matches!(r["status"].as_str(), Some("Done") | Some("Canceled") | Some("Backlog"))),
+                .all(|r| !matches!(r["status"].as_str(), Some("Done" | "Canceled" | "Backlog"))),
             "no terminal statuses in open listing"
         );
     }

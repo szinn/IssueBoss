@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn relationship_kind_rejects_unknown() {
-        assert!("Blocks".parse::<RelationshipKind>().is_err());
-        assert!("".parse::<RelationshipKind>().is_err());
+        "Blocks".parse::<RelationshipKind>().unwrap_err();
+        "".parse::<RelationshipKind>().unwrap_err();
     }
 }

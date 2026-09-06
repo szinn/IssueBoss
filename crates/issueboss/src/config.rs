@@ -27,43 +27,49 @@ impl Config {
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    use temp_env::with_vars;
+
     use super::Config;
 
     #[test]
     fn loads_defaults_when_database_url_set() {
-        unsafe {
-            std::env::set_var("ISSUEBOSS__DATABASE_URL", "postgres://localhost/test");
-            std::env::remove_var("ISSUEBOSS__HTTP_PORT");
-            std::env::remove_var("ISSUEBOSS__MCP_PORT");
-            std::env::remove_var("ISSUEBOSS__GRPC_PORT");
-        }
-        let cfg = Config::load().expect("should load with database_url set");
-        assert_eq!(cfg.http_port, 8080);
-        assert_eq!(cfg.mcp_port, 8090);
-        assert_eq!(cfg.grpc_port, 9090);
-        assert_eq!(cfg.database_url, "postgres://localhost/test");
+        with_vars(
+            [
+                ("ISSUEBOSS__DATABASE_URL", Some("postgres://localhost/test")),
+                ("ISSUEBOSS__HTTP_PORT", None),
+                ("ISSUEBOSS__MCP_PORT", None),
+                ("ISSUEBOSS__GRPC_PORT", None),
+            ],
+            || {
+                let cfg = Config::load().expect("should load with database_url set");
+                assert_eq!(cfg.http_port, 8080);
+                assert_eq!(cfg.mcp_port, 8090);
+                assert_eq!(cfg.grpc_port, 9090);
+                assert_eq!(cfg.database_url, "postgres://localhost/test");
+            },
+        );
     }
 
     #[test]
     fn fails_without_database_url() {
-        unsafe { std::env::remove_var("ISSUEBOSS__DATABASE_URL") };
-        assert!(Config::load().is_err(), "must fail without database_url");
+        with_vars([("ISSUEBOSS__DATABASE_URL", None::<&str>)], || {
+            assert!(Config::load().is_err(), "must fail without database_url");
+        });
     }
 
     #[test]
     fn overrides_default_ports_via_env() {
-        unsafe {
-            std::env::set_var("ISSUEBOSS__DATABASE_URL", "sqlite://:memory:");
-            std::env::set_var("ISSUEBOSS__HTTP_PORT", "9001");
-            std::env::set_var("ISSUEBOSS__GRPC_PORT", "9999");
-        }
-        let cfg = Config::load().expect("should load");
-        assert_eq!(cfg.http_port, 9001);
-        assert_eq!(cfg.grpc_port, 9999);
-        unsafe {
-            std::env::remove_var("ISSUEBOSS__HTTP_PORT");
-            std::env::remove_var("ISSUEBOSS__GRPC_PORT");
-            std::env::remove_var("ISSUEBOSS__DATABASE_URL");
-        }
+        with_vars(
+            [
+                ("ISSUEBOSS__DATABASE_URL", Some("sqlite://:memory:")),
+                ("ISSUEBOSS__HTTP_PORT", Some("9001")),
+                ("ISSUEBOSS__GRPC_PORT", Some("9999")),
+            ],
+            || {
+                let cfg = Config::load().expect("should load");
+                assert_eq!(cfg.http_port, 9001);
+                assert_eq!(cfg.grpc_port, 9999);
+            },
+        );
     }
 }

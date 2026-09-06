@@ -63,14 +63,11 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::InvalidId(_) | Self::InvalidPageSize(_) | Self::InvalidToken(_) => ErrorKind::BadRequest,
-            Self::Validation(_) => ErrorKind::InvalidInput,
-            Self::GateFailure { .. } => ErrorKind::InvalidInput,
-            Self::CycleDetected => ErrorKind::InvalidInput,
+            Self::Validation(_) | Self::GateFailure { .. } | Self::CycleDetected => ErrorKind::InvalidInput,
             Self::AlreadyExists => ErrorKind::Conflict,
-            Self::InvalidTransactionType | Self::Infrastructure(_) | Self::CryptoError(_) => ErrorKind::Internal,
+            Self::InvalidTransactionType | Self::Infrastructure(_) | Self::CryptoError(_) | Self::FrontendError(_) => ErrorKind::Internal,
             Self::StorageUnavailable(_) => ErrorKind::ServiceUnavailable,
             Self::RepositoryError(e) => e.kind(),
-            Self::FrontendError(_) => ErrorKind::Internal,
         }
     }
 

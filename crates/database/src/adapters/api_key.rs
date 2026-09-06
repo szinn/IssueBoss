@@ -41,8 +41,8 @@ impl From<api_keys::Model> for ApiKey {
 
 #[async_trait::async_trait]
 impl ApiKeyRepository for ApiKeyRepositoryAdapter {
-    async fn create(&self, transaction: &dyn Transaction, new_key: NewApiKey, hash: String, prefix: String) -> Result<ApiKey, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn create(&self, tx: &dyn Transaction, new_key: NewApiKey, hash: String, prefix: String) -> Result<ApiKey, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         let mut model = api_keys::ActiveModel::new();
         model.user_id = Set(new_key.user_id as i64);
         model.key_type = Set(new_key.key_type);
@@ -54,8 +54,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
         Ok(model.into())
     }
 
-    async fn find_by_id(&self, transaction: &dyn Transaction, id: ApiKeyId) -> Result<Option<ApiKey>, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn find_by_id(&self, tx: &dyn Transaction, id: ApiKeyId) -> Result<Option<ApiKey>, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         Ok(prelude::ApiKeys::find_by_id(id as i64)
             .one(transaction)
             .await
@@ -63,8 +63,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
             .map(Into::into))
     }
 
-    async fn find_by_hash(&self, transaction: &dyn Transaction, hash: &str) -> Result<Option<ApiKey>, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn find_by_hash(&self, tx: &dyn Transaction, hash: &str) -> Result<Option<ApiKey>, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         Ok(prelude::ApiKeys::find()
             .filter(api_keys::Column::KeyHash.eq(hash))
             .one(transaction)
@@ -73,8 +73,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
             .map(Into::into))
     }
 
-    async fn list_for_user(&self, transaction: &dyn Transaction, user_id: UserId) -> Result<Vec<ApiKey>, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn list_for_user(&self, tx: &dyn Transaction, user_id: UserId) -> Result<Vec<ApiKey>, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         Ok(ApiKeyEntity::find()
             .filter(api_keys::Column::UserId.eq(user_id as i64))
             .all(transaction)
@@ -85,8 +85,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
             .collect())
     }
 
-    async fn delete(&self, transaction: &dyn Transaction, id: ApiKeyId) -> Result<ApiKey, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn delete(&self, tx: &dyn Transaction, id: ApiKeyId) -> Result<ApiKey, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         let existing = prelude::ApiKeys::find_by_id(id as i64)
             .one(transaction)
             .await
@@ -97,8 +97,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
         Ok(key)
     }
 
-    async fn delete_all_for_user(&self, transaction: &dyn Transaction, user_id: UserId) -> Result<Vec<ApiKey>, Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn delete_all_for_user(&self, tx: &dyn Transaction, user_id: UserId) -> Result<Vec<ApiKey>, Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         let existing = ApiKeyEntity::find()
             .filter(api_keys::Column::UserId.eq(user_id as i64))
             .all(transaction)
@@ -113,8 +113,8 @@ impl ApiKeyRepository for ApiKeyRepositoryAdapter {
         Ok(keys)
     }
 
-    async fn update_last_used(&self, transaction: &dyn Transaction, id: ApiKeyId) -> Result<(), Error> {
-        let transaction = TransactionImpl::get_db_transaction(transaction)?;
+    async fn update_last_used(&self, tx: &dyn Transaction, id: ApiKeyId) -> Result<(), Error> {
+        let transaction = TransactionImpl::get_db_transaction(tx)?;
         let existing = prelude::ApiKeys::find_by_id(id as i64)
             .one(transaction)
             .await

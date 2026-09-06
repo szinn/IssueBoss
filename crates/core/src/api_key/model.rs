@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use sha2::{Digest, Sha256};
@@ -40,7 +42,10 @@ pub struct GeneratedApiKey {
 pub fn generate_api_key(key_type: &str) -> GeneratedApiKey {
     let mut bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut bytes);
-    let random_part: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let random_part = bytes.iter().fold(String::new(), |mut acc, b| {
+        let _ = write!(acc, "{b:02x}");
+        acc
+    });
     let plaintext = format!("{key_type}_{random_part}");
     let hash = sha256_hex(&plaintext);
     let prefix = plaintext[..12.min(plaintext.len())].to_owned();
@@ -51,7 +56,10 @@ pub fn generate_api_key(key_type: &str) -> GeneratedApiKey {
 pub fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher.finalize().iter().fold(String::new(), |mut acc, b| {
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
 }
 
 #[cfg(test)]

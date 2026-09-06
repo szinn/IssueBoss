@@ -242,7 +242,7 @@ pub struct IssueFilter {
 /// Format: `"{prefix}-{number}"`, e.g. `"IB-42"`.
 /// This is also the canonical user-facing reference for the issue.
 pub fn derive_issue_slug(prefix: &str, number: u32) -> String {
-    format!("{}-{}", prefix, number)
+    format!("{prefix}-{number}")
 }
 
 impl IssueStatus {
@@ -285,46 +285,25 @@ impl IssueStatus {
         matches!(
             (self, next),
             // Needed → InProgress
-            (Self::TriageNeeded,    Self::TriageInProgress)
-            | (Self::ResearchNeeded,  Self::ResearchInProgress)
-            | (Self::SpecNeeded,      Self::SpecInProgress)
-            | (Self::PlanNeeded,      Self::PlanInProgress)
-            | (Self::DevNeeded,       Self::DevInProgress)
-            // Needed → Done (skip all remaining phases)
-            | (Self::TriageNeeded,    Self::Done)
-            | (Self::ResearchNeeded,  Self::Done)
-            | (Self::SpecNeeded,      Self::Done)
-            | (Self::PlanNeeded,      Self::Done)
-            | (Self::DevNeeded,       Self::Done)
-            // InProgress → Review
-            | (Self::TriageInProgress,    Self::TriageReview)
-            | (Self::ResearchInProgress,  Self::ResearchReview)
-            | (Self::SpecInProgress,      Self::SpecReview)
-            | (Self::PlanInProgress,      Self::PlanReview)
-            | (Self::DevInProgress,       Self::DevReview)
-            // Review → Needed (routing layer — no review routes to an earlier category)
-            | (Self::TriageReview,    Self::TriageNeeded)
-            | (Self::TriageReview,    Self::ResearchNeeded)
-            | (Self::TriageReview,    Self::SpecNeeded)
-            | (Self::TriageReview,    Self::PlanNeeded)
-            | (Self::TriageReview,    Self::DevNeeded)
-            | (Self::ResearchReview,  Self::ResearchNeeded)
-            | (Self::ResearchReview,  Self::SpecNeeded)
-            | (Self::ResearchReview,  Self::PlanNeeded)
-            | (Self::ResearchReview,  Self::DevNeeded)
-            | (Self::SpecReview,      Self::ResearchNeeded)
-            | (Self::SpecReview,      Self::SpecNeeded)
-            | (Self::SpecReview,      Self::PlanNeeded)
-            | (Self::SpecReview,      Self::DevNeeded)
-            | (Self::PlanReview,      Self::PlanNeeded)
-            | (Self::PlanReview,      Self::DevNeeded)
-            | (Self::DevReview,       Self::DevNeeded)
-            // Review → Done (skip all remaining phases)
-            | (Self::TriageReview,    Self::Done)
-            | (Self::ResearchReview,  Self::Done)
-            | (Self::SpecReview,      Self::Done)
-            | (Self::PlanReview,      Self::Done)
-            | (Self::DevReview,       Self::Done)
+            (Self::TriageNeeded, Self::TriageInProgress | Self::Done) |
+(Self::ResearchNeeded, Self::ResearchInProgress | Self::Done) |
+(Self::SpecNeeded, Self::SpecInProgress | Self::Done) |
+(Self::PlanNeeded, Self::PlanInProgress | Self::Done) |
+(Self::DevNeeded, Self::DevInProgress | Self::Done) |
+(Self::TriageInProgress, Self::TriageReview) |
+(Self::ResearchInProgress, Self::ResearchReview) |
+(Self::SpecInProgress, Self::SpecReview) |
+(Self::PlanInProgress, Self::PlanReview) |
+(Self::DevInProgress, Self::DevReview) |
+(Self::TriageReview,
+Self::TriageNeeded | Self::ResearchNeeded | Self::SpecNeeded |
+Self::PlanNeeded | Self::DevNeeded | Self::Done) |
+(Self::ResearchReview | Self::SpecReview,
+Self::ResearchNeeded | Self::SpecNeeded) |
+(Self::ResearchReview | Self::SpecReview | Self::PlanReview, Self::PlanNeeded)
+|
+(Self::ResearchReview | Self::SpecReview | Self::PlanReview | Self::DevReview,
+Self::DevNeeded | Self::Done)
         )
     }
 
@@ -459,7 +438,7 @@ mod tests {
             number: 42,
             project_id: 1,
             title: "t".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,

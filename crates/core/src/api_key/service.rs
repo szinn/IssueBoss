@@ -222,7 +222,7 @@ mod tests {
         let key = fake_key(1, 10, "ib_live"); // last_used_at: None
         let mut repo = MockApiKeyRepository::new();
         repo.expect_update_last_used().once().returning(|_, _| Box::pin(async { Ok(()) }));
-        assert!(make_svc(repo).record_usage(key).await.is_ok());
+        make_svc(repo).record_usage(key).await.unwrap();
     }
 
     #[tokio::test]
@@ -232,7 +232,7 @@ mod tests {
         let repo = MockApiKeyRepository::new();
         // expect_update_last_used NOT called — mock will panic if it is
         let result = make_svc(repo).record_usage(key).await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
@@ -241,6 +241,6 @@ mod tests {
         key.last_used_at = Some(Utc::now() - chrono::TimeDelta::hours(25));
         let mut repo = MockApiKeyRepository::new();
         repo.expect_update_last_used().once().returning(|_, _| Box::pin(async { Ok(()) }));
-        assert!(make_svc(repo).record_usage(key).await.is_ok());
+        make_svc(repo).record_usage(key).await.unwrap();
     }
 }

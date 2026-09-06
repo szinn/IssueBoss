@@ -111,18 +111,12 @@ impl IssueRelationshipService for IssueRelationshipServiceImpl {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use mockall::predicate::*;
 
     use super::*;
     use crate::{
-        Error, RepositoryError,
         issue::{IssuePriority, IssueStatus, IssueToken, MockIssueRepository},
-        relationship::{
-            MockIssueRelationshipRepository,
-            model::{IssueRelationship, IssueRelationships, RelatedIssueSummary, RelationshipKind},
-        },
+        relationship::{MockIssueRelationshipRepository, model::RelatedIssueSummary},
         repository::testing::default_repository_service_builder,
     };
 

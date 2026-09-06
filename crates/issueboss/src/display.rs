@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use ib_api::grpc::admin_proto::{
     ApiKeyEntry, ArtifactResponse, CreateApiKeyResponse, IssueRelationshipsProto, IssueResponse, ProjectMemberResponse, ProjectResponse, RelationshipResponse,
     SuperAdminResponse, UserResponse,
@@ -7,17 +9,17 @@ use ib_api::grpc::admin_proto::{
 
 pub fn format_issue(i: &IssueResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Reference:   {}\n", i.slug));
-    out.push_str(&format!("Token:       {}\n", i.token));
-    out.push_str(&format!("Title:       {}\n", i.title));
-    out.push_str(&format!("Status:      {}\n", i.status));
-    out.push_str(&format!("Priority:    {}\n", i.priority));
-    out.push_str(&format!("Size:        {}\n", i.size.as_deref().unwrap_or("-")));
+    let _ = writeln!(out, "Reference:   {}", i.slug);
+    let _ = writeln!(out, "Token:       {}", i.token);
+    let _ = writeln!(out, "Title:       {}", i.title);
+    let _ = writeln!(out, "Status:      {}", i.status);
+    let _ = writeln!(out, "Priority:    {}", i.priority);
+    let _ = writeln!(out, "Size:        {}", i.size.as_deref().unwrap_or("-"));
     if !i.description.is_empty() {
-        out.push_str(&format!("Description: {}\n", i.description));
+        let _ = writeln!(out, "Description: {}", i.description);
     }
-    out.push_str(&format!("Created:     {}\n", i.created_at));
-    out.push_str(&format!("Updated:     {}\n", i.updated_at));
+    let _ = writeln!(out, "Created:     {}", i.created_at);
+    let _ = writeln!(out, "Updated:     {}", i.updated_at);
     out
 }
 
@@ -26,17 +28,18 @@ pub fn format_issue_list(issues: &[IssueResponse]) -> String {
         return "No issues.\n".to_owned();
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<10} {:<12} {:<10} {:<8} TITLE\n", "REF", "STATUS", "PRIORITY", "SIZE"));
-    out.push_str(&format!("{}\n", "-".repeat(80)));
+    let _ = writeln!(out, "{:<10} {:<12} {:<10} {:<8} TITLE", "REF", "STATUS", "PRIORITY", "SIZE");
+    let _ = writeln!(out, "{}", "-".repeat(80));
     for i in issues {
-        out.push_str(&format!(
-            "{:<10} {:<12} {:<10} {:<8} {}\n",
+        let _ = writeln!(
+            out,
+            "{:<10} {:<12} {:<10} {:<8} {}",
             i.slug,
             i.status,
             i.priority,
             i.size.as_deref().unwrap_or("-"),
             i.title,
-        ));
+        );
     }
     out
 }
@@ -46,15 +49,15 @@ pub fn format_issue_list(issues: &[IssueResponse]) -> String {
 
 pub fn format_project(p: &ProjectResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Token:    {}\n", p.token));
-    out.push_str(&format!("Name:     {}\n", p.name));
-    out.push_str(&format!("Slug:     {}\n", p.slug));
-    out.push_str(&format!("Prefix:   {}\n", p.prefix));
+    let _ = writeln!(out, "Token:    {}", p.token);
+    let _ = writeln!(out, "Name:     {}", p.name);
+    let _ = writeln!(out, "Slug:     {}", p.slug);
+    let _ = writeln!(out, "Prefix:   {}", p.prefix);
     if let Some(desc) = &p.description {
-        out.push_str(&format!("Desc:     {desc}\n"));
+        let _ = writeln!(out, "Desc:     {desc}");
     }
-    out.push_str(&format!("Created:  {}\n", p.created_at));
-    out.push_str(&format!("Updated:  {}\n", p.updated_at));
+    let _ = writeln!(out, "Created:  {}", p.created_at);
+    let _ = writeln!(out, "Updated:  {}", p.updated_at);
     out
 }
 
@@ -63,22 +66,22 @@ pub fn format_project_list(projects: &[ProjectResponse]) -> String {
         return "No projects.\n".to_owned();
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<15} {:<25} {:<8} TOKEN\n", "SLUG", "NAME", "PREFIX"));
-    out.push_str(&format!("{}\n", "-".repeat(80)));
+    let _ = writeln!(out, "{:<15} {:<25} {:<8} TOKEN", "SLUG", "NAME", "PREFIX");
+    let _ = writeln!(out, "{}", "-".repeat(80));
     for p in projects {
-        out.push_str(&format!("{:<15} {:<25} {:<8} {}\n", p.slug, p.name, p.prefix, p.token));
+        let _ = writeln!(out, "{:<15} {:<25} {:<8} {}", p.slug, p.name, p.prefix, p.token);
     }
     out
 }
 
 pub fn format_project_member(m: &ProjectMemberResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Project:  {}\n", m.project_token));
-    out.push_str(&format!("User:     {}\n", m.username));
-    out.push_str(&format!("Token:    {}\n", m.user_token));
-    out.push_str(&format!("Caps:     {}\n", m.capabilities.join(", ")));
-    out.push_str(&format!("Created:  {}\n", m.created_at));
-    out.push_str(&format!("Updated:  {}\n", m.updated_at));
+    let _ = writeln!(out, "Project:  {}", m.project_token);
+    let _ = writeln!(out, "User:     {}", m.username);
+    let _ = writeln!(out, "Token:    {}", m.user_token);
+    let _ = writeln!(out, "Caps:     {}", m.capabilities.join(", "));
+    let _ = writeln!(out, "Created:  {}", m.created_at);
+    let _ = writeln!(out, "Updated:  {}", m.updated_at);
     out
 }
 
@@ -87,10 +90,10 @@ pub fn format_project_member_list(members: &[ProjectMemberResponse]) -> String {
         return "No members.\n".to_owned();
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<20} CAPABILITIES\n", "USERNAME"));
-    out.push_str(&format!("{}\n", "-".repeat(50)));
+    let _ = writeln!(out, "{:<20} CAPABILITIES", "USERNAME");
+    let _ = writeln!(out, "{}", "-".repeat(50));
     for m in members {
-        out.push_str(&format!("{:<20} {}\n", m.username, m.capabilities.join(", ")));
+        let _ = writeln!(out, "{:<20} {}", m.username, m.capabilities.join(", "));
     }
     out
 }
@@ -99,13 +102,13 @@ pub fn format_project_member_list(members: &[ProjectMemberResponse]) -> String {
 
 pub fn format_user(u: &UserResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Username:   {}\n", u.username));
-    out.push_str(&format!("Full name:  {}\n", u.full_name));
-    out.push_str(&format!("Email:      {}\n", u.email));
-    out.push_str(&format!("Token:      {}\n", u.token));
-    out.push_str(&format!("Caps:       {}\n", u.capabilities.join(", ")));
-    out.push_str(&format!("Created:    {}\n", u.created_at));
-    out.push_str(&format!("Updated:    {}\n", u.updated_at));
+    let _ = writeln!(out, "Username:   {}", u.username);
+    let _ = writeln!(out, "Full name:  {}", u.full_name);
+    let _ = writeln!(out, "Email:      {}", u.email);
+    let _ = writeln!(out, "Token:      {}", u.token);
+    let _ = writeln!(out, "Caps:       {}", u.capabilities.join(", "));
+    let _ = writeln!(out, "Created:    {}", u.created_at);
+    let _ = writeln!(out, "Updated:    {}", u.updated_at);
     out
 }
 
@@ -114,16 +117,10 @@ pub fn format_user_list(users: &[UserResponse]) -> String {
         return "No users.\n".to_owned();
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<20} {:<25} {:<30} CAPABILITIES\n", "USERNAME", "FULL NAME", "EMAIL"));
-    out.push_str(&format!("{}\n", "-".repeat(90)));
+    let _ = writeln!(out, "{:<20} {:<25} {:<30} CAPABILITIES", "USERNAME", "FULL NAME", "EMAIL");
+    let _ = writeln!(out, "{}", "-".repeat(90));
     for u in users {
-        out.push_str(&format!(
-            "{:<20} {:<25} {:<30} {}\n",
-            u.username,
-            u.full_name,
-            u.email,
-            u.capabilities.join(", ")
-        ));
+        let _ = writeln!(out, "{:<20} {:<25} {:<30} {}", u.username, u.full_name, u.email, u.capabilities.join(", "));
     }
     out
 }
@@ -133,11 +130,11 @@ pub fn format_user_list(users: &[UserResponse]) -> String {
 
 pub fn format_artifact(a: &ArtifactResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Kind:    {}\n", a.kind));
-    out.push_str(&format!("Slug:    {}\n", a.slug.as_deref().unwrap_or("-")));
-    out.push_str(&format!("Body:    {}\n", a.body_json));
-    out.push_str(&format!("Created: {}\n", a.created_at));
-    out.push_str(&format!("Updated: {}\n", a.updated_at));
+    let _ = writeln!(out, "Kind:    {}", a.kind);
+    let _ = writeln!(out, "Slug:    {}", a.slug.as_deref().unwrap_or("-"));
+    let _ = writeln!(out, "Body:    {}", a.body_json);
+    let _ = writeln!(out, "Created: {}", a.created_at);
+    let _ = writeln!(out, "Updated: {}", a.updated_at);
     out
 }
 
@@ -146,10 +143,10 @@ pub fn format_artifact_list(artifacts: &[ArtifactResponse]) -> String {
         return "No artifacts.\n".to_owned();
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<16} {:<24} BODY\n", "KIND", "SLUG"));
-    out.push_str(&format!("{}\n", "-".repeat(80)));
+    let _ = writeln!(out, "{:<16} {:<24} BODY", "KIND", "SLUG");
+    let _ = writeln!(out, "{}", "-".repeat(80));
     for a in artifacts {
-        out.push_str(&format!("{:<16} {:<24} {}\n", a.kind, a.slug.as_deref().unwrap_or("-"), a.body_json));
+        let _ = writeln!(out, "{:<16} {:<24} {}", a.kind, a.slug.as_deref().unwrap_or("-"), a.body_json);
     }
     out
 }
@@ -159,9 +156,9 @@ pub fn format_artifact_list(artifacts: &[ArtifactResponse]) -> String {
 
 pub fn format_relationship(r: &RelationshipResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("From: {}\n", r.from_slug));
-    out.push_str(&format!("To:   {}\n", r.to_slug));
-    out.push_str(&format!("Kind: {}\n", r.kind));
+    let _ = writeln!(out, "From: {}", r.from_slug);
+    let _ = writeln!(out, "To:   {}", r.to_slug);
+    let _ = writeln!(out, "Kind: {}", r.kind);
     out
 }
 
@@ -170,19 +167,19 @@ pub fn format_relationships(rels: &IssueRelationshipsProto) -> String {
     if !rels.depends_on.is_empty() {
         out.push_str("Depends on:\n");
         for r in &rels.depends_on {
-            out.push_str(&format!("  {} — {}\n", r.slug, r.title));
+            let _ = writeln!(out, "  {} — {}", r.slug, r.title);
         }
     }
     if !rels.blocks.is_empty() {
         out.push_str("Blocks:\n");
         for r in &rels.blocks {
-            out.push_str(&format!("  {} — {}\n", r.slug, r.title));
+            let _ = writeln!(out, "  {} — {}", r.slug, r.title);
         }
     }
     if !rels.related_to.is_empty() {
         out.push_str("Related to:\n");
         for r in &rels.related_to {
-            out.push_str(&format!("  {} — {}\n", r.slug, r.title));
+            let _ = writeln!(out, "  {} — {}", r.slug, r.title);
         }
     }
     out
@@ -193,28 +190,25 @@ pub fn format_relationships(rels: &IssueRelationshipsProto) -> String {
 
 pub fn format_api_key_created(resp: &CreateApiKeyResponse) -> String {
     let mut out = String::new();
-    out.push_str(&format!("\nAPI key created for: {}\n", resp.username));
-    out.push_str(&format!("  Type:    {}\n", resp.key_type));
-    out.push_str(&format!("  Prefix:  {}\n", resp.key_prefix));
-    out.push_str(&format!("  ID:      {}\n", resp.api_key_id));
-    out.push_str(&format!("  API key: {}\n", resp.api_key));
+    let _ = write!(out, "\nAPI key created for: {}\n", resp.username);
+    let _ = writeln!(out, "  Type:    {}", resp.key_type);
+    let _ = writeln!(out, "  Prefix:  {}", resp.key_prefix);
+    let _ = writeln!(out, "  ID:      {}", resp.api_key_id);
+    let _ = writeln!(out, "  API key: {}", resp.api_key);
     out.push_str("\nStore this key securely — it will not be shown again.\n");
     out
 }
 
 pub fn format_api_key_list(username: &str, keys: &[ApiKeyEntry]) -> String {
     if keys.is_empty() {
-        return format!("No API keys for {}.\n", username);
+        return format!("No API keys for {username}.\n");
     }
     let mut out = String::new();
-    out.push_str(&format!("{:<20} {:<12} {:<20} {:<25} LAST USED\n", "ID", "TYPE", "PREFIX", "NAME"));
-    out.push_str(&format!("{}\n", "-".repeat(100)));
+    let _ = writeln!(out, "{:<20} {:<12} {:<20} {:<25} LAST USED", "ID", "TYPE", "PREFIX", "NAME");
+    let _ = writeln!(out, "{}", "-".repeat(100));
     for k in keys {
         let last = if k.last_used_at.is_empty() { "-".to_owned() } else { k.last_used_at.clone() };
-        out.push_str(&format!(
-            "{:<20} {:<12} {:<20} {:<25} {}\n",
-            k.api_key_id, k.key_type, k.key_prefix, k.name, last
-        ));
+        let _ = writeln!(out, "{:<20} {:<12} {:<20} {:<25} {}", k.api_key_id, k.key_type, k.key_prefix, k.name, last);
     }
     out
 }
@@ -225,9 +219,9 @@ pub fn format_api_key_list(username: &str, keys: &[ApiKeyEntry]) -> String {
 pub fn format_super_admin(resp: &SuperAdminResponse) -> String {
     let mut out = String::new();
     out.push_str("\nSuperAdmin user created.\n\n");
-    out.push_str(&format!("  Username: {}\n", resp.username));
-    out.push_str(&format!("  Email:    {}\n", resp.email));
-    out.push_str(&format!("  API key:  {}\n", resp.api_key));
+    let _ = writeln!(out, "  Username: {}", resp.username);
+    let _ = writeln!(out, "  Email:    {}", resp.email);
+    let _ = writeln!(out, "  API key:  {}", resp.api_key);
     out.push_str("\nStore this key securely — it will not be shown again.\n");
     out.push_str("Set it as ISSUEBOSS_API_KEY to use the admin CLI.\n");
     out

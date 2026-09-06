@@ -11,7 +11,7 @@ async fn update_member_capabilities() {
     let user = fixtures::create_user(&ctx.services, "alice").await;
     let project = fixtures::create_project(&ctx.services, "P", "proj-u", "PU").await;
     let member = fixtures::add_project_member(&ctx.services, project.id, user.id).await;
-    assert!(member.capabilities.0.is_empty());
+    assert_eq!(member.capabilities.0, []);
 
     let updated_member = ib_core::project::ProjectMember {
         capabilities: Capabilities(vec![Capability::ViewIssues]),
@@ -19,7 +19,7 @@ async fn update_member_capabilities() {
     };
     let updated = ctx.services.project_service().update_member(updated_member).await.unwrap();
 
-    assert!(!updated.capabilities.0.is_empty());
+    assert_ne!(updated.capabilities.0, []);
     assert!(updated.capabilities.0.contains(&Capability::ViewIssues));
 }
 

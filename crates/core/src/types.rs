@@ -36,6 +36,7 @@ impl Capabilities {
 
     /// Returns a new `Capabilities` containing all capabilities from both sets,
     /// with duplicates removed.
+    #[must_use]
     pub fn merge(&self, other: &Self) -> Self {
         let mut combined = self.0.clone();
         for cap in &other.0 {

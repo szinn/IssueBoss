@@ -23,7 +23,7 @@ pub fn create_mcp_router(core_services: Arc<CoreServices>) -> Router {
     let mcp_service = StreamableHttpService::new(
         move || {
             let user = CURRENT_MCP_USER
-                .try_with(|u| u.clone())
+                .try_with(std::clone::Clone::clone)
                 .map_err(|_| std::io::Error::other("no authenticated user in task context"))?;
             tracing::info!(
                 user_id = user.id,

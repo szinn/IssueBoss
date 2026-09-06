@@ -188,7 +188,7 @@ mod tests {
         let resp = handler::list_users(&make_core_services(user_repo, MockApiKeyRepository::new()), ListUsersRequest {})
             .await
             .unwrap();
-        assert!(resp.users.is_empty());
+        assert_eq!(resp.users, []);
     }
 
     #[tokio::test]

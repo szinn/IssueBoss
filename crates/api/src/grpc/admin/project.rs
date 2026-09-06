@@ -81,7 +81,7 @@ pub(crate) mod handler {
                 capabilities,
             })
             .await?;
-        Ok(project_member_to_proto(member, &user))
+        Ok(project_member_to_proto(&member, &user))
     }
 
     pub(crate) async fn update_project_member(core: &Arc<CoreServices>, req: UpdateProjectMemberRequest) -> Result<ProjectMemberResponse, Error> {
@@ -102,7 +102,7 @@ pub(crate) mod handler {
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         member.capabilities = parse_capabilities(&req.capabilities)?;
         let updated = core.project_service().update_member(member).await?;
-        Ok(project_member_to_proto(updated, &user))
+        Ok(project_member_to_proto(&updated, &user))
     }
 
     pub(crate) async fn remove_project_member(core: &Arc<CoreServices>, req: RemoveProjectMemberRequest) -> Result<Empty, Error> {
@@ -134,7 +134,7 @@ pub(crate) mod handler {
                 .find_by_id(member.user_id)
                 .await?
                 .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-            responses.push(project_member_to_proto(member, &user));
+            responses.push(project_member_to_proto(&member, &user));
         }
         Ok(ListProjectMembersResponse { members: responses })
     }
@@ -175,7 +175,7 @@ pub mod api {
         client
             .create_project(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -185,7 +185,7 @@ pub mod api {
         client
             .get_project(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -195,7 +195,7 @@ pub mod api {
         client
             .list_projects(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -208,7 +208,7 @@ pub mod api {
         client
             .update_project(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -218,7 +218,7 @@ pub mod api {
         client
             .delete_project(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -238,7 +238,7 @@ pub mod api {
         client
             .add_project_member(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -258,7 +258,7 @@ pub mod api {
         client
             .update_project_member(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -271,7 +271,7 @@ pub mod api {
         client
             .remove_project_member(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -283,7 +283,7 @@ pub mod api {
         client
             .list_project_members(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 }
@@ -472,15 +472,15 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             let u = updated.clone();
             project_repo.expect_update().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(u) })
-            });
-        }
+            })
+        };
         let core = build_core(project_repo, MockProjectMemberRepository::new(), MockUserRepository::new());
         let resp = handler::update_project(
             &core,
@@ -503,16 +503,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             // delete_project service re-loads by id inside the transaction
             let p = project.clone();
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         project_repo.expect_delete().returning(|_, p| Box::pin(async move { Ok(p) }));
         let core = build_core(project_repo, MockProjectMemberRepository::new(), MockUserRepository::new());
         handler::delete_project(&core, DeleteProjectRequest { slug: "myapp".into() }).await.unwrap();
@@ -529,32 +529,32 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             // add_member service re-loads project by id inside the transaction
             let p = project.clone();
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_username().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             let m = member.clone();
             member_repo.expect_create().returning(move |_, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(m) })
-            });
-        }
+            })
+        };
         let core = build_core(project_repo, member_repo, user_repo);
         let resp = handler::add_project_member(
             &core,
@@ -580,31 +580,31 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_username().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             let m = member.clone();
             member_repo.expect_find().returning(move |_, _, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(Some(m)) })
-            });
-        }
+            })
+        };
         {
             let m = member.clone();
             member_repo.expect_update().returning(move |_, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(m) })
-            });
-        }
+            })
+        };
         let core = build_core(project_repo, member_repo, user_repo);
         let resp = handler::update_project_member(
             &core,
@@ -629,16 +629,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_username().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             // remove_member service checks member exists before deleting
@@ -646,8 +646,8 @@ mod tests {
             member_repo.expect_find().returning(move |_, _, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(Some(m)) })
-            });
-        }
+            })
+        };
         member_repo.expect_delete().returning(|_, _, _| Box::pin(async { Ok(()) }));
         let core = build_core(project_repo, member_repo, user_repo);
         handler::remove_project_member(
@@ -672,24 +672,24 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         {
             let u = user.clone();
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             let m = member.clone();
             member_repo.expect_list().returning(move |_, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(vec![m]) })
-            });
-        }
+            })
+        };
         let core = build_core(project_repo, member_repo, user_repo);
         let resp = handler::list_project_members(&core, ListProjectMembersRequest { project_slug: "myapp".into() })
             .await

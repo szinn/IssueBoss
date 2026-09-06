@@ -115,7 +115,7 @@ impl IssueRepository for IssueRepositoryAdapter {
             query = query.filter(issues::Column::Status.eq(status.to_string()));
         }
         if !filter.status_not_in.is_empty() {
-            let excluded: Vec<String> = filter.status_not_in.iter().map(|s| s.to_string()).collect();
+            let excluded: Vec<String> = filter.status_not_in.iter().map(std::string::ToString::to_string).collect();
             query = query.filter(issues::Column::Status.is_not_in(excluded));
         }
         if let Some(priority) = filter.priority {
@@ -224,7 +224,7 @@ mod tests {
             project_id: project.id,
             number,
             title: "Slug test".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -255,7 +255,7 @@ mod tests {
                 project_id: project.id,
                 number,
                 title: title.into(),
-                description: "".into(),
+                description: String::new(),
                 status: IssueStatus::TriageNeeded,
                 priority,
                 size: None,
@@ -285,7 +285,7 @@ mod tests {
             project_id: project.id,
             number,
             title: "Old title".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -315,7 +315,7 @@ mod tests {
             project_id: project.id,
             number,
             title: "Issue".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -361,7 +361,7 @@ mod tests {
                 project_id: project.id,
                 number,
                 title: format!("{status}"),
-                description: "".into(),
+                description: String::new(),
                 status,
                 priority: IssuePriority::Medium,
                 size: None,
@@ -396,7 +396,7 @@ mod tests {
                 project_id: project.id,
                 number,
                 title: format!("{status}"),
-                description: "".into(),
+                description: String::new(),
                 status,
                 priority: IssuePriority::Medium,
                 size: None,
@@ -437,7 +437,7 @@ mod tests {
                 project_id: project.id,
                 number,
                 title: format!("{priority}"),
-                description: "".into(),
+                description: String::new(),
                 status: IssueStatus::DevNeeded,
                 priority,
                 size: None,
@@ -480,7 +480,7 @@ mod tests {
                     project_id: project.id,
                     number: n1,
                     title: "Blocker".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::DevInProgress,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -492,7 +492,7 @@ mod tests {
             .unwrap();
 
         let n2 = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
-        let blocked = svc
+        let blocked_issue = svc
             .issue_repository()
             .create(
                 &*tx,
@@ -500,7 +500,7 @@ mod tests {
                     project_id: project.id,
                     number: n2,
                     title: "Blocked".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::DevNeeded,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -520,7 +520,7 @@ mod tests {
                     project_id: project.id,
                     number: n3,
                     title: "Free".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::DevNeeded,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -536,7 +536,7 @@ mod tests {
             .add(
                 &*tx,
                 ib_core::relationship::model::NewIssueRelationship {
-                    from_issue_id: blocked.id,
+                    from_issue_id: blocked_issue.id,
                     to_issue_id: blocker.id,
                     kind: ib_core::relationship::model::RelationshipKind::DependsOn,
                 },
@@ -559,7 +559,7 @@ mod tests {
         let slugs: Vec<&str> = unblocked.iter().map(|i| i.slug.as_str()).collect();
         assert!(slugs.contains(&blocker.slug.as_str()));
         assert!(slugs.contains(&free.slug.as_str()));
-        assert!(!slugs.contains(&blocked.slug.as_str()));
+        assert!(!slugs.contains(&blocked_issue.slug.as_str()));
     }
 
     #[tokio::test]
@@ -582,7 +582,7 @@ mod tests {
                     project_id: project.id,
                     number: n1,
                     title: "Done Blocker".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::Done,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -602,7 +602,7 @@ mod tests {
                     project_id: project.id,
                     number: n2,
                     title: "Depends on Done".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::DevNeeded,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -656,7 +656,7 @@ mod tests {
                     project_id: project.id,
                     number: n1,
                     title: "Canceled Blocker".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::Canceled,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -676,7 +676,7 @@ mod tests {
                     project_id: project.id,
                     number: n2,
                     title: "Depends on Canceled".into(),
-                    description: "".into(),
+                    description: String::new(),
                     status: IssueStatus::DevNeeded,
                     priority: IssuePriority::Medium,
                     size: None,
@@ -728,7 +728,7 @@ mod tests {
             project_id: project.id,
             number,
             title: "Submitter test".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -754,7 +754,7 @@ mod tests {
             project_id: project.id,
             number,
             title: "Assign test".into(),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,

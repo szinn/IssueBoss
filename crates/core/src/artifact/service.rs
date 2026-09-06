@@ -118,7 +118,7 @@ impl ArtifactService for ArtifactServiceImpl {
             };
             let covered: HashSet<String> = research
                 .iter()
-                .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+                .filter_map(|a| a.body.get("topic_token").and_then(|v| v.as_str()).map(std::borrow::ToOwned::to_owned))
                 .collect();
             Ok(artifacts
                 .into_iter()
@@ -236,17 +236,12 @@ fn validate_slug(slug: &str) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use chrono::Utc;
     use serde_json::json;
 
     use super::*;
     use crate::{
-        artifact::{
-            model::{ArtifactToken, IssueArtifact, NewArtifact},
-            repository::MockArtifactRepository,
-        },
+        artifact::{model::ArtifactToken, repository::MockArtifactRepository},
         repository::testing::default_repository_service_builder,
     };
 
@@ -526,7 +521,7 @@ mod tests {
     #[test]
     fn validate_body_comment_with_text_is_ok() {
         let mut body = json!({"text": "hello"});
-        assert!(validate_body(&ArtifactKind::Comment, &mut body).is_ok());
+        validate_body(&ArtifactKind::Comment, &mut body).unwrap();
     }
 
     #[test]
@@ -553,7 +548,7 @@ mod tests {
     #[test]
     fn validate_body_research_cancelled_no_path_required() {
         let mut body = json!({"topic_token": "T_1", "status": "cancelled"});
-        assert!(validate_body(&ArtifactKind::Research, &mut body).is_ok());
+        validate_body(&ArtifactKind::Research, &mut body).unwrap();
     }
 
     #[test]
@@ -573,14 +568,14 @@ mod tests {
     #[test]
     fn validate_body_research_topic_desc_only_ok() {
         let mut body = json!({"description": "what is auth?"});
-        assert!(validate_body(&ArtifactKind::ResearchTopic, &mut body).is_ok());
+        validate_body(&ArtifactKind::ResearchTopic, &mut body).unwrap();
     }
 
     #[test]
     fn validate_body_status_transition_always_ok() {
         // StatusTransition has no body validation
         let mut body = json!({});
-        assert!(validate_body(&ArtifactKind::StatusTransition, &mut body).is_ok());
+        validate_body(&ArtifactKind::StatusTransition, &mut body).unwrap();
     }
 
     // String-body coercion: MCP clients sometimes serialize object params as
@@ -589,7 +584,7 @@ mod tests {
     #[test]
     fn validate_body_coerces_string_object_for_triage_result() {
         let mut body = Value::String(r#"{"path":"foo.md"}"#.to_string());
-        assert!(validate_body(&ArtifactKind::TriageResult, &mut body).is_ok());
+        validate_body(&ArtifactKind::TriageResult, &mut body).unwrap();
         assert_eq!(body, json!({"path": "foo.md"}));
     }
 
@@ -611,14 +606,14 @@ mod tests {
     #[test]
     fn validate_body_coerces_string_object_for_research() {
         let mut body = Value::String(r#"{"topic_token":"T_1","status":"completed","path":"r.md"}"#.to_string());
-        assert!(validate_body(&ArtifactKind::Research, &mut body).is_ok());
+        validate_body(&ArtifactKind::Research, &mut body).unwrap();
         assert_eq!(body, json!({"topic_token": "T_1", "status": "completed", "path": "r.md"}));
     }
 
     #[test]
     fn validate_body_coerces_string_object_for_comment() {
         let mut body = Value::String(r#"{"text":"hi"}"#.to_string());
-        assert!(validate_body(&ArtifactKind::Comment, &mut body).is_ok());
+        validate_body(&ArtifactKind::Comment, &mut body).unwrap();
         assert_eq!(body, json!({"text": "hi"}));
     }
 
@@ -626,7 +621,7 @@ mod tests {
     fn validate_body_leaves_object_unchanged() {
         let mut body = json!({"path": "x.md"});
         let original = body.clone();
-        assert!(validate_body(&ArtifactKind::TriageResult, &mut body).is_ok());
+        validate_body(&ArtifactKind::TriageResult, &mut body).unwrap();
         assert_eq!(body, original);
     }
 

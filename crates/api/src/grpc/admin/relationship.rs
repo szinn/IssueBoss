@@ -84,7 +84,7 @@ pub mod api {
         client
             .add_relationship(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -110,7 +110,7 @@ pub mod api {
         client
             .list_relationships(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 }
@@ -186,7 +186,7 @@ mod tests {
             number,
             project_id,
             title: format!("Issue {number}"),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -225,8 +225,8 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
 
         let mut api_key_repo = MockApiKeyRepository::new();
         {
@@ -238,8 +238,8 @@ mod tests {
                 } else {
                     Box::pin(async { Ok(None) })
                 }
-            });
-        }
+            })
+        };
         api_key_repo.expect_update_last_used().returning(|_, _| Box::pin(async { Ok(()) }));
 
         use ib_core::repository::testing::default_repository_service_builder;
@@ -273,8 +273,8 @@ mod tests {
                 call += 1;
                 let issue = if call == 1 { from.clone() } else { to.clone() };
                 Box::pin(async move { Ok(Some(issue)) })
-            });
-        }
+            })
+        };
 
         let mut rel_repo = MockIssueRelationshipRepository::new();
         {
@@ -290,8 +290,8 @@ mod tests {
                     created_at: chrono::Utc::now(),
                 };
                 Box::pin(async move { Ok(rel) })
-            });
-        }
+            })
+        };
 
         let core = make_core(issue_repo, rel_repo);
         let resp = handler::add_relationship(
@@ -323,8 +323,8 @@ mod tests {
                 call += 1;
                 let issue = if call == 1 { from.clone() } else { to.clone() };
                 Box::pin(async move { Ok(Some(issue)) })
-            });
-        }
+            })
+        };
 
         let mut rel_repo = MockIssueRelationshipRepository::new();
         rel_repo.expect_remove().returning(|_, _, _, _| Box::pin(async { Ok(true) }));
@@ -365,8 +365,8 @@ mod tests {
         let rels = resp.relationships.expect("should have relationships");
         assert_eq!(rels.depends_on.len(), 1);
         assert_eq!(rels.depends_on[0].slug, "TP-2");
-        assert!(rels.blocks.is_empty());
-        assert!(rels.related_to.is_empty());
+        assert_eq!(rels.blocks, []);
+        assert_eq!(rels.related_to, []);
     }
 
     // ── permission / capability tests via full gRPC service ─────────────────
@@ -380,8 +380,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockIssueRelationshipRepository::new());
         let req = make_request_with_api_key(AddRelationshipRequest {
             from_slug: "TP-1".into(),
@@ -401,8 +401,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockIssueRelationshipRepository::new());
         let req = make_request_with_api_key(RemoveRelationshipRequest {
             from_slug: "TP-1".into(),
@@ -422,8 +422,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockIssueRelationshipRepository::new());
         let req = make_request_with_api_key(ListRelationshipsRequest { issue_slug: "TP-1".into() });
         let err = svc.list_relationships(req).await.unwrap_err();

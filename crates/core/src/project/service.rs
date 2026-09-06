@@ -250,7 +250,7 @@ mod tests {
             Box::pin(async move { Ok(d) })
         });
         let svc = make_svc(repo, MockProjectMemberRepository::new());
-        assert!(svc.delete_project(1).await.is_ok());
+        svc.delete_project(1).await.unwrap();
     }
 
     #[tokio::test]
@@ -290,7 +290,7 @@ mod tests {
                 capabilities: Capabilities::default(),
             })
             .await;
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[tokio::test]
@@ -312,7 +312,7 @@ mod tests {
         });
         member_repo.expect_delete().returning(|_, _, _| Box::pin(async { Ok(()) }));
         let svc = make_svc(MockProjectRepository::new(), member_repo);
-        assert!(svc.remove_member(1, 1).await.is_ok());
+        svc.remove_member(1, 1).await.unwrap();
     }
 
     #[tokio::test]
@@ -341,16 +341,16 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             let m = member.clone();
             member_repo.expect_find().returning(move |_, _, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(Some(m)) })
-            });
-        }
+            })
+        };
 
         let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), member_repo);
         let caps = svc.capabilities_for_user(10, 1).await.unwrap();
@@ -372,16 +372,16 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         {
             let m = member.clone();
             member_repo.expect_find().returning(move |_, _, _| {
                 let m = m.clone();
                 Box::pin(async move { Ok(Some(m)) })
-            });
-        }
+            })
+        };
 
         let svc = make_svc_with_users(user_repo, MockProjectRepository::new(), member_repo);
         let caps = svc.capabilities_for_user(10, 1).await.unwrap();
@@ -410,8 +410,8 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
         let mut member_repo = MockProjectMemberRepository::new();
         member_repo.expect_find().returning(|_, _, _| Box::pin(async { Ok(None) }));
 

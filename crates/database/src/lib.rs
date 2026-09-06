@@ -4,6 +4,10 @@ pub mod error;
 
 pub use error::*;
 
+// Primary keys are stored as signed SQL columns (SeaORM has no unsigned
+// integer support) but always non-negative in practice, so `as u64`/`as u32`
+// on ids read back from the database is intentional here.
+#[allow(clippy::cast_sign_loss)]
 mod adapters;
 mod entities;
 mod migrations;

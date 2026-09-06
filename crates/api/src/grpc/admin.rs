@@ -84,7 +84,7 @@ async fn issue_to_proto(core: &Arc<CoreServices>, issue: ib_core::issue::Issue, 
     })
 }
 
-fn project_member_to_proto(member: ib_core::project::ProjectMember, user: &ib_core::user::User) -> ProjectMemberResponse {
+fn project_member_to_proto(member: &ib_core::project::ProjectMember, user: &ib_core::user::User) -> ProjectMemberResponse {
     ProjectMemberResponse {
         project_token: ib_core::project::ProjectToken::new(member.project_id).to_string(),
         user_token: user.token.to_string(),
@@ -417,7 +417,7 @@ impl AdminService for GrpcAdminService {
         require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
         artifact::handler::remove_artifact(&self.core_services, req)
             .await
-            .map(|_| Response::new(Empty {}))
+            .map(|()| Response::new(Empty {}))
             .map_err(map_core_error)
     }
 

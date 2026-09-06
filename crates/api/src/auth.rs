@@ -190,6 +190,6 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        assert!(super::require_admin(&user).is_ok());
+        super::require_admin(&user).unwrap();
     }
 }

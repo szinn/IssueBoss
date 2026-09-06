@@ -36,7 +36,7 @@ fn list_for_issue_sql(backend: sea_orm::DatabaseBackend, id: i64) -> (String, Ve
 
 impl From<issue_relationships::Model> for IssueRelationship {
     fn from(m: issue_relationships::Model) -> Self {
-        IssueRelationship {
+        Self {
             id: m.id,
             from_issue_id: m.from_issue_id as u64,
             to_issue_id: m.to_issue_id as u64,

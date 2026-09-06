@@ -53,7 +53,7 @@ pub(crate) mod handler {
         let artifact = core
             .artifact_service()
             // artifact_number is uint32 in proto; ArtifactId is u64 — widening cast, always safe
-            .update_artifact_by_id(issue.id, req.artifact_number as u64, body)
+            .update_artifact_by_id(issue.id, u64::from(req.artifact_number), body)
             .await?;
         Ok(artifact_to_proto(artifact))
     }
@@ -66,7 +66,7 @@ pub(crate) mod handler {
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
         // artifact_number is uint32 in proto; ArtifactId is u64 — widening
         // cast, always safe
-        core.artifact_service().remove_artifact_by_id(issue.id, req.artifact_number as u64).await
+        core.artifact_service().remove_artifact_by_id(issue.id, u64::from(req.artifact_number)).await
     }
 
     pub(crate) async fn list_artifacts(core: &Arc<CoreServices>, req: ListArtifactsRequest) -> Result<ListArtifactsResponse, Error> {
@@ -122,7 +122,7 @@ pub mod api {
         client
             .add_artifact(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -136,7 +136,7 @@ pub mod api {
         client
             .update_artifact(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -162,7 +162,7 @@ pub mod api {
         client
             .list_artifacts(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -175,7 +175,7 @@ pub mod api {
         client
             .move_artifact(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 }
@@ -217,8 +217,8 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
 
         let mut api_key_repo = MockApiKeyRepository::new();
         {
@@ -230,8 +230,8 @@ mod tests {
                 } else {
                     Box::pin(async { Ok(None) })
                 }
-            });
-        }
+            })
+        };
         api_key_repo.expect_update_last_used().returning(|_, _| Box::pin(async { Ok(()) }));
 
         use ib_core::repository::testing::default_repository_service_builder;
@@ -257,7 +257,7 @@ mod tests {
             number,
             project_id,
             title: format!("Issue {number}"),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -317,16 +317,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_create().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(a) })
-            });
-        }
+            })
+        };
 
         let core = make_core(issue_repo, artifact_repo);
         let resp = handler::add_artifact(
@@ -375,8 +375,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
 
         let core = make_core(issue_repo, MockArtifactRepository::new());
         let err = handler::add_artifact(
@@ -385,7 +385,7 @@ mod tests {
                 issue_slug: "TP-1".into(),
                 kind: "NotAKind".into(),
                 slug: None,
-                body_json: r#"{}"#.into(),
+                body_json: r"{}".into(),
             },
             "U_1".into(),
         )
@@ -406,16 +406,16 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let a = artifact.clone();
             artifact_repo.expect_list().returning(move |_, _, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(vec![a]) })
-            });
-        }
+            })
+        };
 
         let core = make_core(issue_repo, artifact_repo);
         let resp = handler::list_artifacts(
@@ -440,8 +440,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
 
@@ -470,23 +470,23 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         {
             let found = fake_artifact(5, 10, ArtifactKind::Comment, Some("my-comment".into()), serde_json::json!({"text": "old"}));
             artifact_repo.expect_find_by_id().returning(move |_, _| {
                 let f = found.clone();
                 Box::pin(async move { Ok(Some(f)) })
-            });
-        }
+            })
+        };
         {
             let a = artifact_updated.clone();
             artifact_repo.expect_update().returning(move |_, _| {
                 let a = a.clone();
                 Box::pin(async move { Ok(a) })
-            });
-        }
+            })
+        };
 
         let core = make_core(issue_repo, artifact_repo);
         let resp = handler::update_artifact(
@@ -512,8 +512,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockArtifactRepository::new());
         let req = make_request_with_api_key(AddArtifactRequest {
             issue_slug: "TP-1".into(),
@@ -535,8 +535,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockArtifactRepository::new());
         let req = make_request_with_api_key(UpdateArtifactRequest {
             issue_slug: "TP-1".into(),
@@ -557,8 +557,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockArtifactRepository::new());
         let req = make_request_with_api_key(RemoveArtifactRequest {
             issue_slug: "TP-1".into(),
@@ -578,8 +578,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(issue_repo, MockArtifactRepository::new());
         let req = make_request_with_api_key(ListArtifactsRequest {
             issue_slug: "TP-1".into(),

@@ -163,7 +163,7 @@ pub mod api {
         client
             .create_issue(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -173,7 +173,7 @@ pub mod api {
         client
             .get_issue(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -198,7 +198,7 @@ pub mod api {
         client
             .update_issue(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -225,7 +225,7 @@ pub mod api {
         client
             .list_issues(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 
@@ -238,7 +238,7 @@ pub mod api {
         client
             .transition_issue(req)
             .await
-            .map(|r| r.into_inner())
+            .map(tonic::Response::into_inner)
             .map_err(|e| Error::from(ApiError::GrpcClient(e.to_string())))
     }
 }
@@ -281,8 +281,8 @@ mod tests {
             user_repo.expect_find_by_id().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(Some(u)) })
-            });
-        }
+            })
+        };
 
         let mut api_key_repo = MockApiKeyRepository::new();
         {
@@ -294,8 +294,8 @@ mod tests {
                 } else {
                     Box::pin(async { Ok(None) })
                 }
-            });
-        }
+            })
+        };
         api_key_repo.expect_update_last_used().returning(|_, _| Box::pin(async { Ok(()) }));
 
         use ib_core::repository::testing::default_repository_service_builder;
@@ -349,7 +349,7 @@ mod tests {
             number,
             project_id,
             title: format!("Issue {number}"),
-            description: "".into(),
+            description: String::new(),
             status: IssueStatus::TriageNeeded,
             priority: IssuePriority::Medium,
             size: None,
@@ -372,15 +372,15 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             let p = project.clone();
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(1u32) }));
         let mut issue_repo = MockIssueRepository::new();
         {
@@ -388,8 +388,8 @@ mod tests {
             issue_repo.expect_create().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(i) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
@@ -409,7 +409,7 @@ mod tests {
             CreateIssueRequest {
                 project_slug: "myapp".into(),
                 title: "Fix login".into(),
-                description: "".into(),
+                description: String::new(),
                 priority: "High".into(),
                 size: None,
             },
@@ -462,15 +462,15 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             let p = project.clone();
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue_before.clone();
@@ -478,8 +478,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let i = issue_before.clone();
             // find_by_id called by transition_issue service (loads by
@@ -487,8 +487,8 @@ mod tests {
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let i = issue_after.clone();
             issue_repo
@@ -497,8 +497,8 @@ mod tests {
                 .returning(move |_, _| {
                     let i = i.clone();
                     Box::pin(async move { Ok(i) })
-                });
-        }
+                })
+        };
         let mut artifact_repo = MockArtifactRepository::new();
         artifact_repo.expect_list().returning(|_, _, _| Box::pin(async { Ok(vec![]) }));
         artifact_repo.expect_create().returning(|_, _| {
@@ -554,23 +554,23 @@ mod tests {
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let i = issue.clone();
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
@@ -636,15 +636,15 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         {
             let p = project.clone();
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(1u32) }));
         let mut issue_repo = MockIssueRepository::new();
         {
@@ -656,8 +656,8 @@ mod tests {
                 .returning(move |_, _| {
                     let i = i.clone();
                     Box::pin(async move { Ok(i) })
-                });
-        }
+                })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
@@ -677,7 +677,7 @@ mod tests {
             CreateIssueRequest {
                 project_slug: "myapp".into(),
                 title: "Fix login".into(),
-                description: "".into(),
+                description: String::new(),
                 priority: "High".into(),
                 size: None,
             },
@@ -712,7 +712,7 @@ mod tests {
             CreateIssueRequest {
                 project_slug: "myapp".into(),
                 title: "Test".into(),
-                description: "".into(),
+                description: String::new(),
                 priority: "InvalidPriority".into(),
                 size: None,
             },
@@ -734,8 +734,8 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(project_repo, MockIssueRepository::new(), no_member_repo());
         let req = make_request_with_api_key(ListIssuesRequest {
             project_slug: "myapp".into(),
@@ -759,13 +759,13 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(project_repo, MockIssueRepository::new(), no_member_repo());
         let req = make_request_with_api_key(CreateIssueRequest {
             project_slug: "myapp".into(),
             title: "New issue".into(),
-            description: "".into(),
+            description: String::new(),
             priority: "Medium".into(),
             size: None,
         });
@@ -783,8 +783,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
         let req = make_request_with_api_key(GetIssueRequest { slug: "TP-1".into() });
         let err = svc.get_issue(req).await.unwrap_err();
@@ -801,8 +801,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
         let req = make_request_with_api_key(UpdateIssueRequest {
             slug: "TP-1".into(),
@@ -825,8 +825,8 @@ mod tests {
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let svc = make_service_non_member(MockProjectRepository::new(), issue_repo, no_member_repo());
         let req = make_request_with_api_key(TransitionIssueRequest {
             slug: "TP-1".into(),
@@ -846,16 +846,16 @@ mod tests {
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
@@ -890,23 +890,23 @@ mod tests {
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_find_by_slug().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })
-            });
-        }
+            })
+        };
         {
             let u = updated_issue.clone();
             issue_repo.expect_update().returning(move |_, _| {
                 let u = u.clone();
                 Box::pin(async move { Ok(u) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;
@@ -946,16 +946,16 @@ mod tests {
             project_repo.expect_find_by_slug().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
-            });
-        }
+            })
+        };
         let mut issue_repo = MockIssueRepository::new();
         {
             let i = issue.clone();
             issue_repo.expect_list().returning(move |_, _, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(vec![i]) })
-            });
-        }
+            })
+        };
         let mut user_repo = MockUserRepository::new();
         user_repo.expect_find_by_id().returning(|_, _| Box::pin(async { Ok(None) }));
         use ib_core::repository::testing::default_repository_service_builder;

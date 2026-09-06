@@ -15,8 +15,6 @@ members = [
 version = "0.3.6"
 edition = "2024"
 rust-version = "1.85"
-description = "Take control of your project issues"
-readme = "README.md"
 repository = "https://github.com/szinn/IssueBoss"
 license = "MIT"
 
@@ -27,7 +25,6 @@ ib-api = { path = "crates/api" }
 ib-core = { path = "crates/core" }
 ib-database = { path = "crates/database" }
 ib-frontend = { path = "crates/frontend" }
-ib-utils = { path = "crates/utils" }
 
 # Error handling
 anyhow = "1.0.104"
@@ -79,6 +76,7 @@ sha2 = "0.11.0"
 
 # Testing
 mockall = "0.15.0"
+temp-env = "0.3.6"
 tempfile = "3.27.0"
 testcontainers = "0.27.3"
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }

@@ -32,7 +32,7 @@ fn artifact_json_path_sql(backend: sea_orm::DatabaseBackend) -> &'static str {
 
 impl From<issue_artifacts::Model> for IssueArtifact {
     fn from(m: issue_artifacts::Model) -> Self {
-        IssueArtifact {
+        Self {
             id: m.id as u64,
             token: ArtifactToken::from_str(&m.token).expect("valid token in DB"),
             issue_id: m.issue_id as u64,
@@ -113,7 +113,7 @@ impl ArtifactRepository for ArtifactRepositoryAdapter {
         let db = TransactionImpl::get_db_transaction(transaction)?;
         let mut query = prelude::IssueArtifacts::find().filter(issue_artifacts::Column::IssueId.eq(issue_id as i64));
         if let Some(k) = kinds {
-            let kind_strs: Vec<String> = k.iter().map(|k| k.to_string()).collect();
+            let kind_strs: Vec<String> = k.iter().map(std::string::ToString::to_string).collect();
             query = query.filter(issue_artifacts::Column::Kind.is_in(kind_strs));
         }
         Ok(query.all(db).await.map_err(handle_dberr)?.into_iter().map(Into::into).collect())
