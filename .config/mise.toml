@@ -6,6 +6,6 @@
 "cargo:cargo-nextest" = "0.9.143"
 "cargo:mdbook" = "0.5.4"
 "colima" = "0.10.3"
-"git-cliff" = "2.13.1"
+"git-cliff" = "2.14.1"
 "prettier" = "3.9.6"
 "protobuf" = "36.0"
