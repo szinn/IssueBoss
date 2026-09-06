@@ -64,8 +64,8 @@ pub(crate) mod handler {
             .find_by_slug(&req.issue_slug)
             .await?
             .ok_or(Error::RepositoryError(RepositoryError::NotFound))?;
-        // artifact_number is uint32 in proto; ArtifactId is u64 — widening cast, always
-        // safe
+        // artifact_number is uint32 in proto; ArtifactId is u64 — widening
+        // cast, always safe
         core.artifact_service().remove_artifact_by_id(issue.id, req.artifact_number as u64).await
     }
 

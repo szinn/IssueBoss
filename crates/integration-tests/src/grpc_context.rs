@@ -15,8 +15,9 @@ impl GrpcTestContext {
     /// Bind on a random OS port, start the gRPC server, and return the context.
     /// The server shuts down when this context is dropped.
     pub async fn start(core: Arc<CoreServices>) -> Self {
-        // Bind to :0 to get an OS-assigned port, then release it so serve_with_shutdown
-        // can reclaim the same port. The window is tiny on loopback in tests.
+        // Bind to :0 to get an OS-assigned port, then release it so
+        // serve_with_shutdown can reclaim the same port. The window is
+        // tiny on loopback in tests.
         let addr = {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             listener.local_addr().unwrap()

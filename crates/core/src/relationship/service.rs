@@ -45,8 +45,8 @@ impl IssueRelationshipService for IssueRelationshipServiceImpl {
             }
 
             if kind == RelationshipKind::DependsOn {
-                // BFS from `to.id`: if we can reach `from.id`, adding this edge creates a
-                // cycle.
+                // BFS from `to.id`: if we can reach `from.id`, adding this edge
+                // creates a cycle.
                 let mut visited = std::collections::HashSet::new();
                 let mut queue = VecDeque::new();
                 queue.push_back(to.id);
@@ -201,8 +201,8 @@ mod tests {
             .returning(|_, _| Box::pin(async { Ok(Some(fake_issue(1, 1, "A-1"))) }));
 
         let mut rel_repo = MockIssueRelationshipRepository::new();
-        // BFS: from to_issue_id=1, check list_for_issue(1).depends_on → includes id=2 →
-        // cycle
+        // BFS: from to_issue_id=1, check list_for_issue(1).depends_on →
+        // includes id=2 → cycle
         rel_repo.expect_list_for_issue().returning(|_, issue_id| {
             Box::pin(async move {
                 if issue_id == 1 {

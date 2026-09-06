@@ -84,7 +84,8 @@ mod tests {
     #[test]
     fn substring_does_not_count_as_match() {
         let dir = tempfile::tempdir().unwrap();
-        // ".insights/shared" contains ".insights" but is not the entry ".insights/"
+        // ".insights/shared" contains ".insights" but is not the entry
+        // ".insights/"
         std::fs::write(dir.path().join(".gitignore"), ".insights/shared\n").unwrap();
         ensure_gitignore_entry(dir.path(), ".insights/", false).unwrap();
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();

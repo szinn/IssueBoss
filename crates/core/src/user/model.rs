@@ -1,4 +1,4 @@
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use argon2::{Argon2, PasswordHasher};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -65,9 +65,8 @@ impl NewUser {
     }
 
     fn hash_password(password: &str) -> Result<String, crate::Error> {
-        let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
         Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password(password.as_bytes())
             .map(|h| h.to_string())
             .map_err(|e| crate::Error::CryptoError(e.to_string()))
     }

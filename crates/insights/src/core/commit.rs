@@ -27,7 +27,8 @@ pub fn commit(config: &Config, verbose: bool) -> Result<()> {
     // 3. Stage all changes
     git_add_all(repo, verbose)?;
 
-    // 4. Commit (no --allow-empty: we already checked there's something to commit)
+    // 4. Commit (no --allow-empty: we already checked there's something to
+    //    commit)
     git_commit_with_message(repo, &format!("insights update {timestamp}"), verbose)?;
 
     // 5. Push
@@ -47,7 +48,8 @@ mod tests {
     /// "remote", then re-clones the bare remote into a fresh local working
     /// copy. Returns (remote_bare_dir, local_clone_dir).
     fn setup_repo_with_remote() -> (tempfile::TempDir, tempfile::TempDir) {
-        // 1. Bootstrap a local repo with the required structure and an initial commit.
+        // 1. Bootstrap a local repo with the required structure and an initial
+        //    commit.
         let bootstrap = tempfile::tempdir().unwrap();
         for args in [
             vec!["init", "-b", "main"],

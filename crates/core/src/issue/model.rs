@@ -535,7 +535,8 @@ mod tests {
             assert!(from.can_transition_to(&IssueStatus::Backlog), "{from:?} → Backlog should be allowed");
             assert!(from.can_transition_to(&IssueStatus::Canceled), "{from:?} → Canceled should be allowed");
         }
-        // Backlog can go to Canceled (but not itself — self-transition is denied)
+        // Backlog can go to Canceled (but not itself — self-transition is
+        // denied)
         assert!(IssueStatus::Backlog.can_transition_to(&IssueStatus::Canceled));
     }
 

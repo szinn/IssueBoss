@@ -111,7 +111,8 @@ impl IssueRelationshipRepository for IssueRelationshipRepositoryAdapter {
         let id = issue_id as i64;
         let backend = db.get_database_backend();
 
-        // Kind values must match RelationshipKind::Display ("DependsOn", "RelatedTo").
+        // Kind values must match RelationshipKind::Display ("DependsOn",
+        // "RelatedTo").
         let (sql, values) = list_for_issue_sql(backend, id);
         let stmt = Statement::from_sql_and_values(backend, sql, values);
         let rows = RelatedIssueSummaryRow::find_by_statement(stmt).all(db).await.map_err(handle_dberr)?;

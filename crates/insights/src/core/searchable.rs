@@ -27,17 +27,19 @@ pub fn rebuild_searchable(insights_dir: &Path, verbose: bool) -> Result<()> {
 
     // Build hard links for each file
     for (rel_path, abs_src) in &files {
-        // dest relative path mirrors the source relative path under searchable/.
-        // Both strips use the same base, so rel_path comparisons in remove_stale_links
-        // are valid: collect strips insights_dir, remove_stale_links strips searchable.
+        // dest relative path mirrors the source relative path under
+        // searchable/. Both strips use the same base, so rel_path
+        // comparisons in remove_stale_links are valid: collect strips
+        // insights_dir, remove_stale_links strips searchable.
         let dest = searchable.join(rel_path);
         if verbose {
             tracing::trace!("[symlink:check] hard: {}", dest.display());
         }
         if dest.exists() {
-            // Verify the hard link still points to the same inode. If the source was
-            // atomically replaced (editor safe-write), the inode changes while the
-            // path remains the same — we must re-link in that case.
+            // Verify the hard link still points to the same inode. If the
+            // source was atomically replaced (editor safe-write),
+            // the inode changes while the path remains the same —
+            // we must re-link in that case.
             if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(abs_src), std::fs::metadata(&dest)) {
                 if src_meta.ino() == dest_meta.ino() {
                     continue; // already correctly linked
@@ -226,7 +228,8 @@ mod tests {
         let (dir, insights) = setup();
         rebuild_searchable(&insights, false).unwrap();
 
-        // Remove the source file — leaves searchable/shared/research/ potentially empty
+        // Remove the source file — leaves searchable/shared/research/
+        // potentially empty
         let repo_file = dir.path().join("repo/shared/research/foo.md");
         std::fs::remove_file(&repo_file).unwrap();
 

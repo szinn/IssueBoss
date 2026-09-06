@@ -108,7 +108,8 @@ impl ArtifactService for ArtifactServiceImpl {
             if !uncovered_only {
                 return Ok(artifacts);
             }
-            // Fetch Research artifacts to compute coverage (they may not be in `kinds`)
+            // Fetch Research artifacts to compute coverage (they may not be in
+            // `kinds`)
             let requesting_research = kinds.as_ref().is_none_or(|k| k.contains(&ArtifactKind::Research));
             let research: Vec<IssueArtifact> = if requesting_research {
                 artifacts.iter().filter(|a| a.kind == ArtifactKind::Research).cloned().collect()
@@ -404,8 +405,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Covered topic1 filtered out; uncovered topic2 and Research artifact pass
-        // through
+        // Covered topic1 filtered out; uncovered topic2 and Research artifact
+        // pass through
         assert_eq!(result.len(), 2);
         assert!(result.iter().any(|a| a.id == topic2.id));
         assert!(!result.iter().any(|a| a.id == topic1.id));

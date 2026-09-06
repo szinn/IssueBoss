@@ -359,8 +359,8 @@ fn serialize<T: serde::Serialize>(value: &T) -> Result<String, McpError> {
 }
 
 fn build_completeness(status: &IssueStatus, artifacts: &[IssueArtifact]) -> serde_json::Value {
-    // Only completed Research artifacts count as covering a topic; cancelled ones
-    // do not.
+    // Only completed Research artifacts count as covering a topic; cancelled
+    // ones do not.
     let covered: std::collections::HashSet<String> = artifacts
         .iter()
         .filter(|a| a.kind == ArtifactKind::Research && a.body.get("status").and_then(|v| v.as_str()) == Some("completed"))
@@ -1608,14 +1608,16 @@ mod tests {
         }
         {
             let p = project.clone();
-            // create_issue internally calls find_by_id to verify the project exists
+            // create_issue internally calls find_by_id to verify the project
+            // exists
             project_repo.expect_find_by_id().returning(move |_, _| {
                 let p = p.clone();
                 Box::pin(async move { Ok(Some(p)) })
             });
         }
         {
-            // create_issue calls increment_issue_counter to get the next issue number
+            // create_issue calls increment_issue_counter to get the next issue
+            // number
             project_repo.expect_increment_issue_counter().returning(|_, _| Box::pin(async { Ok(2u32) }));
         }
         let mut issue_repo = MockIssueRepository::new();
@@ -2624,9 +2626,9 @@ mod tests {
     #[tokio::test]
     async fn transition_issue_gate_failure() {
         use ib_core::artifact::MockArtifactRepository;
-        // Issue is in TriageInProgress; transitioning to TriageReview requires a
-        // TriageResult artifact. With no artifacts, the gate fails and
-        // map_core_err must encode a gate_failed payload.
+        // Issue is in TriageInProgress; transitioning to TriageReview requires
+        // a TriageResult artifact. With no artifacts, the gate fails
+        // and map_core_err must encode a gate_failed payload.
         let mut issue = fake_issue(10, 1, 1);
         issue.status = IssueStatus::TriageInProgress;
 
@@ -2662,7 +2664,8 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        // The error message from map_core_err contains the gate_failed JSON payload
+        // The error message from map_core_err contains the gate_failed JSON
+        // payload
         let err = result.unwrap_err();
         assert!(
             err.message.contains("gate_failed"),
@@ -2737,7 +2740,8 @@ mod tests {
 
         let project_repo = MockProjectRepository::new();
         let issue_repo = MockIssueRepository::new();
-        // No expectations set — repository must NOT be called for same-path no-op
+        // No expectations set — repository must NOT be called for same-path
+        // no-op
         let artifact_repo = MockArtifactRepository::new();
 
         let core = make_core_with_artifacts(project_repo, issue_repo, artifact_repo);
@@ -2841,7 +2845,8 @@ mod tests {
                 })
             })
         });
-        // list_for_issue may be called during cycle check — return empty for safety.
+        // list_for_issue may be called during cycle check — return empty for
+        // safety.
         rel_repo
             .expect_list_for_issue()
             .returning(|_, _| Box::pin(async { Ok(IssueRelationships::default()) }));

@@ -231,7 +231,8 @@ mod tests {
         assert!(matches!(result, Err(Error::RepositoryError(RepositoryError::NotFound))));
     }
 
-    // ─── list_users ───────────────────────────────────────────────────────────
+    // ─── list_users
+    // ───────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn list_users_returns_all() {
@@ -246,7 +247,8 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
-    // ─── any_super_admin ──────────────────────────────────────────────────────
+    // ─── any_super_admin
+    // ──────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn any_super_admin_delegates_to_repository() {

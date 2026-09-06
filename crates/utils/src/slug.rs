@@ -66,7 +66,8 @@ mod tests {
 
     #[test]
     fn truncates_at_hyphen_boundary() {
-        // 48 'a's + "-bc" = 51 chars total — truncates at 50, finds hyphen at 48
+        // 48 'a's + "-bc" = 51 chars total — truncates at 50, finds hyphen at
+        // 48
         let input = format!("{}-bc", "a".repeat(48));
         let result = slugify(&input);
         assert_eq!(result.len(), 48);
@@ -85,14 +86,16 @@ mod tests {
 
     #[test]
     fn pure_unicode_returns_empty() {
-        // All non-ASCII chars map to hyphens; after collapse and strip, result is "".
+        // All non-ASCII chars map to hyphens; after collapse and strip, result
+        // is "".
         assert_eq!(slugify("日本語"), "");
     }
 
     #[test]
     fn leading_special_chars_stripped() {
-        // Leading non-alphanumeric chars produce leading hyphens which are collapsed
-        // but then stripped because the slug must not start with a hyphen.
+        // Leading non-alphanumeric chars produce leading hyphens which are
+        // collapsed but then stripped because the slug must not start
+        // with a hyphen.
         assert_eq!(slugify("!!!hello"), "hello");
     }
 

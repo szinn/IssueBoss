@@ -1,5 +1,5 @@
-use argon2::password_hash::rand_core::{OsRng, RngCore};
 use chrono::{DateTime, Utc};
+use rand::Rng;
 use sha2::{Digest, Sha256};
 
 use crate::user::UserId;
@@ -39,7 +39,7 @@ pub struct GeneratedApiKey {
 /// Generate a new `{key_type}_{32 hex chars}` API key.
 pub fn generate_api_key(key_type: &str) -> GeneratedApiKey {
     let mut bytes = [0u8; 16];
-    OsRng.fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     let random_part: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     let plaintext = format!("{key_type}_{random_part}");
     let hash = sha256_hex(&plaintext);

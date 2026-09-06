@@ -475,8 +475,8 @@ impl AdminService for GrpcAdminService {
             .map_err(map_core_error)?
             .ok_or_else(|| Status::not_found("issue not found"))?;
         require_capability(&self.core_services, issue.project_id, &user, Capability::UpdateIssues).await?;
-        // Returns OK regardless of whether the relationship existed — not-found is
-        // treated as a no-op.
+        // Returns OK regardless of whether the relationship existed — not-found
+        // is treated as a no-op.
         let _removed = relationship::handler::remove_relationship(&self.core_services, req)
             .await
             .map_err(map_core_error)?;

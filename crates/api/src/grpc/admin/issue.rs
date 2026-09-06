@@ -482,7 +482,8 @@ mod tests {
         }
         {
             let i = issue_before.clone();
-            // find_by_id called by transition_issue service (loads by token.id())
+            // find_by_id called by transition_issue service (loads by
+            // token.id())
             issue_repo.expect_find_by_id().returning(move |_, _| {
                 let i = i.clone();
                 Box::pin(async move { Ok(Some(i)) })

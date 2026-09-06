@@ -139,7 +139,8 @@ impl IssueRepository for IssueRepositoryAdapter {
 
         let mut rows: Vec<issues::Model> = query.all(db).await.map_err(handle_dberr)?;
 
-        // Sort by priority rank (Urgent=0, High=1, Medium=2, Low=3), then number ASC
+        // Sort by priority rank (Urgent=0, High=1, Medium=2, Low=3), then
+        // number ASC
         rows.sort_by(|a, b| {
             let rank = |p: &str| match p {
                 "Urgent" => 0u8,
@@ -426,9 +427,10 @@ mod tests {
             .await
             .unwrap();
 
-        // Insert low-priority issues FIRST (lower numbers), then a single Urgent
-        // one LAST (highest number). A pre-sort SQL LIMIT would drop the Urgent
-        // row; the correct behavior keeps it because it sorts highest.
+        // Insert low-priority issues FIRST (lower numbers), then a single
+        // Urgent one LAST (highest number). A pre-sort SQL LIMIT would
+        // drop the Urgent row; the correct behavior keeps it because it
+        // sorts highest.
         for priority in [IssuePriority::Low, IssuePriority::Low, IssuePriority::Medium, IssuePriority::Urgent] {
             let number = svc.project_repository().increment_issue_counter(&*tx, project.id).await.unwrap();
             let record = NewIssueRecord {
@@ -546,7 +548,8 @@ mod tests {
         let all = svc.issue_repository().list(&*tx, project.id, IssueFilter::default()).await.unwrap();
         assert_eq!(all.len(), 3);
 
-        // With exclude_blocked: only blocker and free returned (blocked is omitted)
+        // With exclude_blocked: only blocker and free returned (blocked is
+        // omitted)
         let filter = IssueFilter {
             exclude_blocked: Some(true),
             ..Default::default()
@@ -703,9 +706,10 @@ mod tests {
         };
         let result = svc.issue_repository().list(&*tx, project.id, filter).await.unwrap();
 
-        // canceled_blocker has no dependencies of its own, so it passes the filter.
-        // issue is excluded because it depends on canceled_blocker (Canceled != Done,
-        // so still an active block).
+        // canceled_blocker has no dependencies of its own, so it passes the
+        // filter. issue is excluded because it depends on
+        // canceled_blocker (Canceled != Done, so still an active
+        // block).
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].slug, canceled_blocker.slug);
     }

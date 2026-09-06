@@ -83,7 +83,8 @@ impl IssueService for IssueServiceImpl {
             if new_status.is_in_progress() {
                 issue.assigned = triggered_by;
             }
-            // Exiting InProgress: leave assigned unchanged (last assignee retained)
+            // Exiting InProgress: leave assigned unchanged (last assignee
+            // retained)
 
             issue.status = new_status;
             let updated = issue_repository.update(tx, issue).await?;

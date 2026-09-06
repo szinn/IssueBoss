@@ -74,7 +74,8 @@ async fn artifact_lifecycle() {
         .unwrap();
     assert_eq!(triage.slug, Some("triage".to_string()));
 
-    // TriageInProgress → TriageReview (gate passes now that TriageResult exists)
+    // TriageInProgress → TriageReview (gate passes now that TriageResult
+    // exists)
     let issue = ctx
         .services
         .issue_service()
