@@ -8,4 +8,4 @@
 "colima" = "0.10.3"
 "git-cliff" = "2.13.1"
 "prettier" = "3.9.6"
-"protobuf" = "36.0"
+"protobuf" = "36.1"
