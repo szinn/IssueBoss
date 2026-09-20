@@ -64,7 +64,7 @@ RUN ls -lR target/x86_64-unknown-linux-musl
 # Sanity check: should say "not a dynamic executable"
 RUN ldd target/x86_64-unknown-linux-musl/release/issueboss || true
 
-FROM ubuntu:latest@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d AS certs
+FROM ubuntu:latest@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78 AS certs
 RUN groupadd --gid 1234 issueboss && useradd -g 1234 -M -u 1234 -s /usr/sbin/nologin issueboss
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN update-ca-certificates
