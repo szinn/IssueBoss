@@ -28,7 +28,7 @@ ib-frontend = { path = "crates/frontend" }
 
 # Error handling
 anyhow = "1.0.104"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 
 # Async
 async-trait = "0.1.92"
