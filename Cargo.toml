@@ -32,7 +32,7 @@ thiserror = "2.0.21"
 
 # Async
 async-trait = "0.1.92"
-tokio = { version = "1.53.1", default-features = false, features = ["full"] }
+tokio = { version = "1.53.2", default-features = false, features = ["full"] }
 tokio-graceful-shutdown = "0.20.0"
 
 # Identifiers
