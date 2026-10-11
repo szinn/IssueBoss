@@ -128,7 +128,7 @@ impl IssueService for IssueServiceImpl {
 }
 
 fn check_transition_gate(from: IssueStatus, to: IssueStatus, artifacts: &[IssueArtifact]) -> Result<Option<String>, Error> {
-    use ArtifactKind::{ResearchTopic, TriageResult, Spec, Plan};
+    use ArtifactKind::{Plan, ResearchTopic, Spec, TriageResult};
 
     // ── Prerequisites for entering Needed states ────────────────────────────
     // These fire for any (from, to) where `to` is a gated Needed state.

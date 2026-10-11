@@ -285,25 +285,26 @@ impl IssueStatus {
         matches!(
             (self, next),
             // Needed → InProgress
-            (Self::TriageNeeded, Self::TriageInProgress | Self::Done) |
-(Self::ResearchNeeded, Self::ResearchInProgress | Self::Done) |
-(Self::SpecNeeded, Self::SpecInProgress | Self::Done) |
-(Self::PlanNeeded, Self::PlanInProgress | Self::Done) |
-(Self::DevNeeded, Self::DevInProgress | Self::Done) |
-(Self::TriageInProgress, Self::TriageReview) |
-(Self::ResearchInProgress, Self::ResearchReview) |
-(Self::SpecInProgress, Self::SpecReview) |
-(Self::PlanInProgress, Self::PlanReview) |
-(Self::DevInProgress, Self::DevReview) |
-(Self::TriageReview,
-Self::TriageNeeded | Self::ResearchNeeded | Self::SpecNeeded |
-Self::PlanNeeded | Self::DevNeeded | Self::Done) |
-(Self::ResearchReview | Self::SpecReview,
-Self::ResearchNeeded | Self::SpecNeeded) |
-(Self::ResearchReview | Self::SpecReview | Self::PlanReview, Self::PlanNeeded)
-|
-(Self::ResearchReview | Self::SpecReview | Self::PlanReview | Self::DevReview,
-Self::DevNeeded | Self::Done)
+            (Self::TriageNeeded, Self::TriageInProgress | Self::Done)
+                | (Self::ResearchNeeded, Self::ResearchInProgress | Self::Done)
+                | (Self::SpecNeeded, Self::SpecInProgress | Self::Done)
+                | (Self::PlanNeeded, Self::PlanInProgress | Self::Done)
+                | (Self::DevNeeded, Self::DevInProgress | Self::Done)
+                | (Self::TriageInProgress, Self::TriageReview)
+                | (Self::ResearchInProgress, Self::ResearchReview)
+                | (Self::SpecInProgress, Self::SpecReview)
+                | (Self::PlanInProgress, Self::PlanReview)
+                | (Self::DevInProgress, Self::DevReview)
+                | (
+                    Self::TriageReview,
+                    Self::TriageNeeded | Self::ResearchNeeded | Self::SpecNeeded | Self::PlanNeeded | Self::DevNeeded | Self::Done
+                )
+                | (Self::ResearchReview | Self::SpecReview, Self::ResearchNeeded | Self::SpecNeeded)
+                | (Self::ResearchReview | Self::SpecReview | Self::PlanReview, Self::PlanNeeded)
+                | (
+                    Self::ResearchReview | Self::SpecReview | Self::PlanReview | Self::DevReview,
+                    Self::DevNeeded | Self::Done
+                )
         )
     }
 

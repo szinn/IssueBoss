@@ -529,10 +529,10 @@ pub mod api {
     }
 
     pub fn with_api_key<T>(mut req: tonic::Request<T>) -> tonic::Request<T> {
-        if let Ok(key) = std::env::var("ISSUEBOSS_API_KEY") {
-            if let Ok(val) = key.parse() {
-                req.metadata_mut().insert("x-api-key", val);
-            }
+        if let Ok(key) = std::env::var("ISSUEBOSS_API_KEY")
+            && let Ok(val) = key.parse()
+        {
+            req.metadata_mut().insert("x-api-key", val);
         }
         req
     }

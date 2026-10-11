@@ -13,7 +13,7 @@ use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
         ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
-        Resource, ResourceContents, ResourceTemplate, ServerCapabilities, ServerInfo,
+        Resource, ResourceContents, ResourceTemplate, ServerCapabilities, ServerConfig,
     },
     schemars, tool, tool_handler, tool_router,
 };
@@ -286,7 +286,8 @@ struct RemoveArtifactParams {
 struct ListArtifactsParams {
     /// Issue slug, e.g. "IB-42"
     issue_slug: String,
-    /// Optional list of kinds to filter by (e.g. `["Research", "ResearchTopic"]`)
+    /// Optional list of kinds to filter by (e.g. `["Research",
+    /// "ResearchTopic"]`)
     kinds: Option<Vec<String>>,
     /// When true, only return ResearchTopics with no corresponding Research
     /// artifact
@@ -913,7 +914,8 @@ impl IssueBossServer {
                     .issue_service()
                     .find_by_id(artifact.issue_id)
                     .await
-                    .map_err(map_core_err)?.map_or_else(|| format!("#{}", artifact.issue_id), |i| i.slug);
+                    .map_err(map_core_err)?
+                    .map_or_else(|| format!("#{}", artifact.issue_id), |i| i.slug);
                 slug_cache.insert(artifact.issue_id, slug.clone());
                 slug
             };
@@ -1044,8 +1046,8 @@ impl IssueBossServer {
 
 #[tool_handler]
 impl ServerHandler for IssueBossServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions(
             "IssueBoss issue tracker. The project slug is pre-configured. To see active work, prefer list_open_issues (returns compact rows for every \
              non-terminal issue — far smaller than full objects; pass limit on very large projects). Use list_issues with a status filter for a specific \
              pipeline state, or summary: true for compact rows. Use transition_issue to move issues through the pipeline. Resources: issueboss://projects \
@@ -3069,8 +3071,7 @@ mod tests {
         assert!(rows[0].get("description").is_none(), "default output must be summary");
         assert!(rows[0].get("token").is_none(), "summary row omits token");
         assert!(
-            rows.iter()
-                .all(|r| !matches!(r["status"].as_str(), Some("Done" | "Canceled" | "Backlog"))),
+            rows.iter().all(|r| !matches!(r["status"].as_str(), Some("Done" | "Canceled" | "Backlog"))),
             "no terminal statuses in open listing"
         );
     }
