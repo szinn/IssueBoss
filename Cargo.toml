@@ -72,7 +72,7 @@ tonic-reflection = "0.14.6"
 # Crypto
 argon2 = "0.6.0"
 rand = "0.10.3"
-sha2 = "0.11.0"
+sha2 = "0.11.1"
 
 # Testing
 mockall = "0.15.0"
