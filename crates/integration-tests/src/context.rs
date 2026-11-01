@@ -4,7 +4,8 @@ use ib_core::CoreServices;
 
 pub struct TestContext {
     pub services: Arc<CoreServices>,
-    // Keeps container handles (or other resources) alive for the duration of the test.
+    // Keeps container handles (or other resources) alive for the duration of
+    // the test.
     _handle: Box<dyn Any + Send>,
 }
 

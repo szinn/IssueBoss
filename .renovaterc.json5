@@ -42,6 +42,14 @@
       rangeStrategy: "bump"
     },
     {
+      matchManagers: ["cargo"],
+      matchPackageNames: ["tonic", "/^tonic-/"],
+      groupName: "tonic",
+      group: {
+        commitMessageTopic: "tonic crates"
+      }
+    },
+    {
       matchUpdateTypes: ["major"],
       labels: ["type/major"],
       semanticCommitType: "feat!"
