@@ -21,9 +21,15 @@ pub struct InitArgs {
 
 pub fn cmd_init(args: InitArgs, verbose: bool) -> anyhow::Result<()> {
     let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    // Canonicalize so the stored config and symlink targets are clean absolute
+    // paths, even if --repo was given as relative or with repeated slashes.
+    let repo = args
+        .repo
+        .canonicalize()
+        .with_context(|| format!("Insights repo '{}' not found", args.repo.display()))?;
     init(
         InitOptions {
-            repo: args.repo,
+            repo,
             user: args.user,
             project: args.project,
             project_root,

@@ -12,7 +12,9 @@ pub fn ensure_symlink(link: &Path, target: &Path, verbose: bool) -> Result<()> {
     }
     if link.is_symlink() {
         let current = std::fs::read_link(link).with_context(|| format!("Failed to read symlink '{}'", link.display()))?;
-        if current == target {
+        // Compare raw bytes: `Path` equality is component-wise and treats
+        // `//a/b` and `/a/b` as equal, which would keep a malformed link.
+        if current.as_os_str() == target.as_os_str() {
             return Ok(()); // already correct
         }
         // Stale — remove and re-create
@@ -86,6 +88,22 @@ mod tests {
 
         ensure_symlink(&link, &target_b, false).unwrap();
         assert_eq!(std::fs::read_link(&link).unwrap(), target_b);
+    }
+
+    #[test]
+    fn replaces_symlink_whose_target_differs_only_in_slashes() {
+        let (_dir, target, link) = setup();
+        let mut doubled = std::ffi::OsString::from("/");
+        doubled.push(target.as_os_str());
+        std::os::unix::fs::symlink(&doubled, &link).unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap().as_os_str(), doubled.as_os_str());
+
+        ensure_symlink(&link, &target, false).unwrap();
+        assert_eq!(
+            std::fs::read_link(&link).unwrap().as_os_str(),
+            target.as_os_str(),
+            "a `//`-prefixed link must be rewritten to the normalized target"
+        );
     }
 
     #[test]
