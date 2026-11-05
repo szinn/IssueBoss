@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7](https://github.com/szinn/IssueBoss/compare/v0.3.6..v0.3.7) - 2026-11-05
+
+### Bug Fixes
+
+- _(core)_ Update argon2 password hashing to 0.6 API - ([fff11ab](https://github.com/szinn/IssueBoss/commit/fff11ab8cc4b7a97e9d372aea6ac7e668e7ff49e))
+- _(insights)_ Normalize repo path so symlink targets have no doubled slashes - ([e5478f3](https://github.com/szinn/IssueBoss/commit/e5478f3f34b81a14adfacb21e3aa29009c0ec7bf))
+
+### Miscellaneous Tasks
+
+- _(api)_ Fix clippy lints and formatting - ([555a4f5](https://github.com/szinn/IssueBoss/commit/555a4f54f687f5d10d3e5e3af4c565d164839e52))
+- _(core,database,api,frontend,utils)_ Inherit workspace clippy lints and fix findings - ([4c1da1f](https://github.com/szinn/IssueBoss/commit/4c1da1f4e328aa9f716d55eef4f0361af4d5897a))
+
 ## [0.3.6](https://github.com/szinn/IssueBoss/compare/v0.3.5..v0.3.6) - 2026-08-23
 
 ### Refactor
