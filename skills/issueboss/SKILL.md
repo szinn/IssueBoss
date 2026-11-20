@@ -82,7 +82,7 @@ Delegate to the `issueboss:triage` agent via the Agent tool.
 ### Spec phase
 
 1. transition→SpecInProgress
-2. Invoke `superpowers-extended-cc:brainstorming` to write the spec
+2. Invoke `superpowers:brainstorming` to write the spec
 3. The spec file MUST begin with YAML front-matter per `.insights/shared/schema.md`:
 
    <!-- prettier-ignore -->
@@ -109,7 +109,7 @@ Delegate to the `issueboss:triage` agent via the Agent tool.
 ### Plan phase
 
 1. transition→PlanInProgress
-2. Invoke `superpowers-extended-cc:writing-plans` to write the plan
+2. Invoke `superpowers:writing-plans` to write the plan
 3. The plan file MUST begin with YAML front-matter per `.insights/shared/schema.md`:
 
    <!-- prettier-ignore -->
@@ -146,11 +146,11 @@ When told to implement an issue that is in DevNeeded:
 1. Read the Plan artifact (list_artifacts kind=Plan) — if no Plan artifact exists, **halt immediately** and tell the user a plan is required before development can begin.
 2. Read the plan file at the artifact's path to understand the full implementation scope and any skills it recommends.
 3. transition→DevInProgress
-4. Execute the plan. Use whichever skills the plan recommends (e.g. `superpowers-extended-cc:executing-plans`, `superpowers-extended-cc:test-driven-development`). If no skill is specified, default to `superpowers-extended-cc:executing-plans`.
+4. Execute the plan. Use whichever skills the plan recommends (e.g. `superpowers:executing-plans`, `superpowers:test-driven-development`). If no skill is specified, default to `superpowers:executing-plans`.
 
 ### Dev phase integration
 
-When the dev phase uses `superpowers-extended-cc:finishing-a-development-branch` or `superpowers-extended-cc:executing-plans` to complete work, those skills drive the final steps. **You must still transition the issue to DevReview** as soon as the finishing skill presents its completion options to the user — do not wait for the user to ask. This is the same rule as step 4 above; it applies even when another skill is running the completion flow.
+When the dev phase uses `superpowers:finishing-a-development-branch` or `superpowers:executing-plans` to complete work, those skills drive the final steps. **You must still transition the issue to DevReview** as soon as the finishing skill presents its completion options to the user — do not wait for the user to ask. This is the same rule as step 4 above; it applies even when another skill is running the completion flow.
 
 The "immediately transition to Review" rule is an invariant, not a step in a linear flow — it holds regardless of which skill is running at the moment work completes.
 

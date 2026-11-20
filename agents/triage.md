@@ -64,7 +64,7 @@ The issue slug is provided in the incoming prompt as the first argument (e.g. `T
    > Error (Step 3): Issue `{slug}` is in `{status}`, not `TriageNeeded`. Triage aborted.
 4. `transition_issue` → `TriageInProgress`
 5. Read complete issue including all attached artifacts: `issueboss://issues/{slug}` and `list_artifacts` (re-read after transition to capture any state changes and full artifact list)
-6. Investigate scope: read relevant source files, look for related issues. If the issue describes a bug or unexpected behavior, invoke the `superpowers-extended-cc:systematic-debugging` skill (if available) to guide the investigation.
+6. Investigate scope: read relevant source files, look for related issues. If the issue describes a bug or unexpected behavior, invoke the `superpowers:systematic-debugging` skill (if available) to guide the investigation.
 
 <!-- prettier-ignore-start -->
 6b. Identify and link related existing issues
