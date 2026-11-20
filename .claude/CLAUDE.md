@@ -39,12 +39,13 @@ repository trait (port), and service together:
 crates/core/src/
 ├── lib.rs              # CoreServices composition root, create_services()
 ├── error.rs            # Error, ErrorKind, RepositoryError
-├── types.rs            # Shared newtypes (Email, Age) used across domains
+├── types.rs            # Shared types used across domains (e.g. Capabilities)
+├── token.rs            # Generic Token type used for entity tokens
 ├── repository.rs       # Shared infrastructure: Repository, Transaction traits,
-│                       #   RepositoryService, and transaction macros
-├── test_support.rs     # Mock implementations (behind "test-support" feature)
-├── auth/               # Session auth: Session, AuthService, SessionRepository
-└── user/               # Users and settings: User, UserService, UserSettingService
+│                       #   RepositoryService, transaction macros, and `mod testing`
+│                       #   (MockTransaction, pre-wired MockRepository)
+└── api_key/ artifact/ issue/ project/ relationship/ user/
+                        # one directory per domain: model, repository, service
 ```
 
 **Adding a new domain:** Create a new directory (e.g. `order/`) with `mod.rs`, `model.rs`,
@@ -54,22 +55,21 @@ crates/core/src/
 **Import conventions:** Use flat re-exports from domain modules, not submodule paths:
 
 - `use crate::user::{User, UserService, UserId}` (not `user::model::User`)
-- `use crate::session::{Session, NewSession}` (not `session::model::Session`)
 - `use crate::repository::{Repository, Transaction}` for shared infrastructure
-- `use crate::types::{Email, Age}` for shared newtypes
+- `use crate::types::Capabilities` for shared types
 
 ### Subsystem Pattern (tokio-graceful-shutdown)
 
 Each crate that owns background work exposes a `XxxSubsystem` struct + `create_xxx_subsystem()` factory
-in its `lib.rs` — same pattern as `ApiSubsystem` in `bb-api`. The subsystem's `run()` starts its
-child subsystems via `subsys.start(SubsystemBuilder::new(...))` then awaits `on_shutdown_requested()`.
-`bookboss/main.rs` stays clean: call the factories,
-pass results to `Toplevel`. Existing subsystems: `ApiSubsystem` (bb-api), `CoreSubsystem` (bb-core,
-owns `JobWorker` and `BookdropScanner`).
+in its `lib.rs` — see `ApiSubsystem` in `ib-api`, whose `run()` starts its child subsystems
+(`GrpcSubsystem`, `McpSubsystem`) via `subsys.start(SubsystemBuilder::new(...))` then awaits
+`on_shutdown_requested()`. `crates/issueboss/src/commands/server.rs` stays clean: call the factories,
+pass results to `Toplevel`. Existing subsystems: `ApiSubsystem` (ib-api), `FrontendSubsystem` (ib-frontend).
 
 ## Frontend
 
-The frontend is built using Dioxus. See @.claude/Dioxus.md for more info.
+The frontend (`ib-frontend`) is currently an axum stub page; Dioxus is the planned UI framework.
+See @.claude/Dioxus.md for Dioxus 0.7 guidance.
 
 ## Database
 
@@ -78,13 +78,13 @@ for environment variable setup and SeaORM adapter patterns.
 
 ## Workflows
 
-**Multi-step implementations:** Each logical step **MUST** be its own jj changeset. Before
+**Multi-step implementations:** Make each logical step its own jj changeset. Before
 starting a step, ensure the working copy is empty (`jj new` if needed). At the end of each
 step, run the end-of-task routine below.
 
 **After completing each task (end-of-task routine):**
 
-These **MUST** be run as separate Bash commands. Do **NOT** join them into a single one with `&&`.
+Run these as three separate Bash commands, not one `&&` chain, so each step's result is visible on its own.
 
 1. `just fmt-lint` — format and lint code
 2. `just component-tests` — verify tests pass
@@ -109,8 +109,8 @@ To verify the baseline state, run `just component-tests`.
 
 ## Conventions
 
-- **Commits:** Valid scopes: `api`, `cli`, `core`, `database`, `frontend` (match crate names)
-- **Error handling:** `thiserror` for `core`, `api`, `database`; `anyhow` for `bookboss` (binary)
+- **Commits:** Valid scopes: `api`, `core`, `database`, `frontend`, `insights` (match crate names)
+- **Error handling:** `thiserror` for `core`, `api`, `database`; `anyhow` for the `issueboss` and `insights` binaries
 
 ## Insights
 
@@ -119,8 +119,8 @@ managed by the `insights` CLI.
 
 **At the start of brainstorming, spec writing, or planning work**, dispatch the
 `insights-locator` agent to check for prior context before proceeding. Use
-`insights-analyzer` to read the most relevant documents. Use the `insights-research`
-skill to orchestrate both and save a research document.
+`insights-analyzer` to read the most relevant documents. The `insights-research`
+skill orchestrates both and presents the findings inline.
 
 Directory layout:
 

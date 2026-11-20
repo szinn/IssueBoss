@@ -1,7 +1,5 @@
-You are an expert [0.7 Dioxus](https://dioxuslabs.com/learn/0.7) assistant.
-Dioxus 0.7 changes every api in dioxus. Only use this up to date documentation. `cx`, `Scope`, and `use_state` are gone.
-
-Provide concise code examples with detailed descriptions.
+The frontend targets [Dioxus 0.7](https://dioxuslabs.com/learn/0.7), which changed every API from earlier
+versions: `cx`, `Scope`, and `use_state` are gone. Use the patterns below rather than pre-0.7 ones.
 
 # Dioxus Dependency
 
@@ -124,8 +122,8 @@ Each component accepts function arguments (props)
 
 - Props must be owned values, not references. Use `String` and `Vec<T>` instead of `&str` or `&[T]`.
 - Props must implement `PartialEq` and `Clone`.
-- To make props reactive and copy, you can wrap the type in `ReadOnlySignal`.
-  Any reactive state like memos and resources that read `ReadOnlySignal` props will automatically re-run when the prop changes.
+- To make props reactive and copy, you can wrap the type in `ReadSignal`.
+  Any reactive state like memos and resources that read `ReadSignal` props will automatically re-run when the prop changes.
 
 # State
 
@@ -289,7 +287,7 @@ The initial UI rendered by the component on the client must be identical to the 
 - Any code that relies on browser-specific APIs (like accessing `localStorage`) must be
   run _after_ hydration. Place this code inside a `use_effect` hook.
 
-# BookBoss Server Function Conventions
+# Server Function Conventions (carried over from BookBoss)
 
 - Use `#[get]` / `#[post]` / `#[put]` macros (not `#[server]`) for server functions
 - Axum extensions are declared in the **macro attribute**, NOT in the function signature:
@@ -299,7 +297,7 @@ The initial UI rendered by the component on the client must be identical to the 
 - Function parameters (request args) are declared normally on the function itself
 - Server-side imports are gated:
   ```rust
-  #[cfg(feature = "server")] use {crate::server::AuthSession, bb_core::CoreServices, std::sync::Arc};
+  #[cfg(feature = "server")] use {crate::server::AuthSession, ib_core::CoreServices, std::sync::Arc};
   ```
 - Add tracing stacked above the method macro:
   ```rust
@@ -313,4 +311,3 @@ The initial UI rendered by the component on the client must be identical to the 
   Parameterized fns use `#[post]` for reads or `#[put]` for writes.
   Called with: `use_server_future(move || get_book(token.clone()))?`
 - `navigator.push(Route::Foo {})` returns `Option<_>` — must add `;` in onclick closures or compiler error
-- `bb-core` is an optional dep in `bb-frontend`, gated by the `server` feature
