@@ -11,14 +11,14 @@ Use only `jj` commands for all version control operations.
 - Run: `just run`
 - Format: `just fmt`
 - Lint: `just clippy`
-- Quick tests (component + postgres): `just quick-test`
+- Quick tests (component + postgres + sqlite): `just quick-test`
 - All tests: `just test`
 - Component tests: `just component-tests`
 - Integration tests: `just integration-tests`
 - Postgres integration tests: `just postgres-integration-tests`
 - SQLite integration tests: `just sqlite-integration-tests`
 - Insta tests: `just insta`
-- Start colima (for integration/all tests): `colima start`
+- Start colima (for quick/integration/all tests): `colima start`
 - Stop colima: `colima stop`
 
 ## Architecture
@@ -27,7 +27,7 @@ This project follows hexagonal (ports & adapters) architecture. Dependencies poi
 toward the core domain. Never introduce dependencies from `core` to outer crates.
 
 The architecture is the same structure as BookBoss (<https://github.com/szinn/BookBoss>).
-If you are going to do something new, checking out BookBoss (@../BookBoss) to see if the
+If you are going to do something new, check BookBoss (`../BookBoss` from the project root) to see if the
 pattern (or code) already exists there and suggest that to the user as an option.
 
 ### Core Crate Organization
@@ -69,12 +69,12 @@ pass results to `Toplevel`. Existing subsystems: `ApiSubsystem` (ib-api), `Front
 ## Frontend
 
 The frontend (`ib-frontend`) is currently an axum stub page; Dioxus is the planned UI framework.
-See @.claude/Dioxus.md for Dioxus 0.7 guidance.
+Read `.claude/Dioxus.md` for Dioxus 0.7 guidance before writing Dioxus code.
 
 ## Database
 
-The project uses SeaORM with Postgres, MySQL, and SQLite support. See @.claude/Database.md
-for environment variable setup and SeaORM adapter patterns.
+The project uses SeaORM with Postgres, MySQL, and SQLite support. Read `.claude/Database.md`
+for environment variable setup and SeaORM adapter patterns before database work.
 
 ## Workflows
 

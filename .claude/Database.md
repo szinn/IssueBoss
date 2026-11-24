@@ -40,5 +40,5 @@ if existing.version != record.version { return Err(VersionConflict); }
 2. Create `database/src/adapters/<name>.rs` with adapter impl + tests
 3. Register in `database/src/adapters/mod.rs`
 4. Import + wire into builder in `database/src/lib.rs`
-5. Add `Mock<Name>Repository` to the pre-wired `MockRepository` in the `testing` module of
-   `core/src/repository.rs`
+5. Add `Mock<Name>Repository` to `default_repository_service_builder()` in the `testing`
+   module of `core/src/repository.rs`
